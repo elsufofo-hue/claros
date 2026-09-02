@@ -8,7 +8,7 @@ import { sql } from "./db.ts";
  */
 const MIGRATIONS_DIR = join(import.meta.dir, "..", "migrations");
 
-async function main() {
+export async function runMigrations(): Promise<void> {
   await sql`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       nome text PRIMARY KEY,
@@ -43,10 +43,14 @@ async function main() {
       ? "Nada a migrar — banco já está atualizado."
       : `${novas} migration(s) aplicada(s).`,
   );
-  await sql.end();
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Permite rodar como script: `bun src/migrate.ts`
+if (import.meta.main) {
+  runMigrations()
+    .then(() => sql.end())
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}

@@ -5,11 +5,27 @@ import { SQL } from "bun";
  * O Railway injeta `DATABASE_URL` quando o serviço é ligado a um Postgres.
  */
 const connectionString =
-  process.env["DATABASE_URL"] ?? process.env["POSTGRES_URL"] ?? "";
+  process.env["DATABASE_URL"] ??
+  process.env["POSTGRES_URL"] ??
+  process.env["DATABASE_PRIVATE_URL"] ??
+  "";
 
 if (!connectionString) {
+  // Diagnóstico sem vazar segredo: lista quais chaves de env chegaram ao runtime.
+  const candidatas = Object.keys(process.env)
+    .filter((k) => /DATABASE|POSTGRES|PG|SQL/i.test(k))
+    .sort();
   throw new Error(
-    "DATABASE_URL não configurada. Ligue este serviço a um Postgres no Railway (Variables → Reference).",
+    "DATABASE_URL não configurada. Ligue este serviço a um Postgres no Railway (Variables → Reference).\n" +
+      `Envs relacionadas visíveis no runtime: ${candidatas.length ? candidatas.join(", ") : "(nenhuma)"}`,
+  );
+}
+
+// Se a referência do Railway não resolveu, o valor vem literal "${{...}}".
+if (connectionString.includes("${{")) {
+  throw new Error(
+    `DATABASE_URL veio como referência não-resolvida (${connectionString}). ` +
+      "Verifique o nome exato do serviço Postgres e se ele está no mesmo ambiente.",
   );
 }
 

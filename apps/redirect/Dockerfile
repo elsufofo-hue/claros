@@ -15,5 +15,6 @@ ENV HOST=0.0.0.0
 
 EXPOSE 8080
 
-# Roda as migrations pendentes e sobe o servidor.
-CMD ["sh", "-c", "bun src/migrate.ts && bun src/server.ts"]
+# Roda as migrations pendentes e sobe o servidor no mesmo processo Bun,
+# sem `sh -c`, para herdar direto as variáveis injetadas pelo Railway.
+CMD ["bun", "src/start.ts"]
