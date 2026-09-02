@@ -1,0 +1,3 @@
+INSERT INTO public.gateways_config (slug, rotulo, adapter, ativo, prioridade, api_url, ambiente, webhook_url, secret_names, observacoes)
+VALUES ('m2pay', 'M2 Pay', 'm2pay', false, 30, 'https://api.m2pay.pro/api', 'producao', 'https://fatura-facil-web.lovable.app/api/public/webhooks/m2pay', ARRAY['M2PAY_API_KEY'], 'Gateway PIX M2 Pay. Valores em centavos. Copia-e-cola vem em data.pix.emv.')
+ON CONFLICT DO NOTHING;
