@@ -1,27 +1,25 @@
-# Fatura Fácil - produção (Node + TanStack Start + Nitro)
-FROM node:22-bookworm-slim AS build
+# claros - produção (Bun + TanStack Start + Nitro preset `bun`)
+FROM oven/bun:1 AS build
 
 WORKDIR /app
 
-# Keep production mode, but explicitly install devDependencies because Vite,
-# TanStack Start and the Lovable Vite config are required to build the app.
+# Vite, TanStack Start e a config Lovable são necessários no build, então
+# instalamos todas as dependências (incluindo devDependencies).
 ENV NODE_ENV=production
-ENV NITRO_PRESET=node-server
+ENV NITRO_PRESET=bun
 
-COPY package*.json ./
-COPY bun.lock ./
-RUN npm install --include=dev --no-audit --no-fund
+COPY package.json bun.lock bunfig.toml ./
+RUN bun install --frozen-lockfile
 
 COPY . .
 
-# Vite automatically reads VITE_* values from the .env copied above.
-RUN npm run build
+# Vite lê automaticamente os valores VITE_* do .env, se presente.
+RUN bun run build
 
-FROM node:22-bookworm-slim AS runtime
+FROM oven/bun:1 AS runtime
 
 WORKDIR /app
 ENV NODE_ENV=production
-ENV NITRO_PRESET=node-server
 ENV PORT=3000
 ENV HOST=0.0.0.0
 
@@ -30,4 +28,4 @@ COPY --from=build /app/package.json ./package.json
 
 EXPOSE 3000
 
-CMD ["node", ".output/server/index.mjs"]
+CMD ["bun", "run", ".output/server/index.mjs"]

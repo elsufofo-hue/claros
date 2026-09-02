@@ -1,0 +1,15 @@
+node_modules
+.git
+.github
+.lovable
+.output
+dist
+dist-ssr
+.wrangler
+*.log
+.DS_Store
+.vscode
+.idea
+Dockerfile
+docker-compose.yml
+README.md

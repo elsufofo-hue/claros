@@ -12,4 +12,8 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Deploy alvo: Railway rodando o servidor SSR com o runtime Bun.
+  // Preset `bun` do Nitro gera `.output/server/index.mjs` executado via `bun run`.
+  // A env var NITRO_PRESET ainda tem prioridade sobre isto, se precisar sobrescrever no CI.
+  nitro: { preset: "bun" },
 });

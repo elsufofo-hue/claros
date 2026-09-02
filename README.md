@@ -72,11 +72,20 @@ Continue developing this project in the [Lovable editor](https://lovable.dev/pro
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Prefer working locally? You need [Bun](https://bun.sh) (`curl -fsSL https://bun.sh/install | bash`).
 
 ```sh
 git clone <this-repository-url>
 cd <repository-name>
-npm i
-npm run dev
+bun install
+bun dev
 ```
+
+## Deploy (Railway)
+
+Runtime de produção é o Bun. O build usa o preset `bun` do Nitro (`vite.config.ts`),
+que gera `.output/server/index.mjs`, executado com `bun run .output/server/index.mjs`.
+
+O Railway builda pelo `Dockerfile` (multi-stage `oven/bun:1`). Variáveis
+necessárias em produção: as `VITE_SUPABASE_*` / `SUPABASE_*` (ver `.env`), além de
+`PORT` e `HOST` (o Railway define `PORT` automaticamente).
