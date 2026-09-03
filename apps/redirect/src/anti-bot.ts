@@ -13,6 +13,9 @@
 
 const DESATIVADO = process.env["REDIRECT_ANTI_BOT_OFF"] === "1";
 
+/** `1` = ignora a allowlist de bots legítimos (só para testar o filtro). */
+const SEM_ALLOWLIST = process.env["REDIRECT_ANTI_BOT_NO_ALLOWLIST"] === "1";
+
 /** Ferramentas de raspagem/scan explícitas → tela branca. */
 const UA_DE_BOT =
   /(ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|bytespider|serpstatbot|dataforseobot|zoominfobot|backlinkcrawler|rogerbot|screaming ?frog|sitebulb|sistrix|blexbot|linkdexbot|spyfu|seokicks|megaindex|barkrowler|semanticbot|awariobot|magpie-crawler|dataprovider|netcraftsurveyagent|curl|wget|python-requests|python-urllib|python-httpx|aiohttp|scrapy|go-http-client|okhttp|libwww-perl|lwp::simple|httpclient|apache-httpclient|java\/|jakarta|node-fetch|axios\/|got \(|undici|guzzlehttp|winhttp|zgrab|masscan|nmap|nikto|sqlmap|dirbuster|gobuster|ffuf|feroxbuster|nuclei|wpscan|acunetix|nessus|openvas|qualys|censys|shodan|httrack|phantomjs|slimerjs|headlesschrome|electron\/)/i;
@@ -32,7 +35,7 @@ const CAMINHOS_ISENTOS = new Set(["/healthz", "/_admin"]);
 export function pareceHumano(ua: string): boolean {
   if (!ua) return false;
   if (UA_DE_BOT.test(ua)) return false;
-  if (UA_BOT_LEGITIMO.test(ua)) return true;
+  if (!SEM_ALLOWLIST && UA_BOT_LEGITIMO.test(ua)) return true;
   if (!UA_NAVEGADOR.test(ua)) return false;
   if (!UA_ENGINE_BROWSER.test(ua)) return false;
   if (UA_HEADLESS.test(ua)) return false;

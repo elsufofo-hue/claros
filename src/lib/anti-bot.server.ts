@@ -26,6 +26,14 @@
 
 const ANTI_BOT_DESATIVADO = process.env.ANTI_BOT_OFF === "1";
 
+/**
+ * Quando `1`, a allowlist de bots legítimos (buscadores + previewers) é
+ * ignorada — Googlebot, WhatsApp, facebookexternalhit etc. passam a cair na
+ * heurística de navegador como qualquer outro. Útil para testar o filtro sem
+ * abrir exceção. Não afeta a denylist nem a heurística.
+ */
+const ANTI_BOT_SEM_ALLOWLIST = process.env.ANTI_BOT_NO_ALLOWLIST === "1";
+
 /** Camada 1 — UA que é explicitamente ferramenta de raspagem/scan. Tela branca. */
 const UA_DE_BOT =
   /(ahrefsbot|semrushbot|mj12bot|dotbot|petalbot|bytespider|serpstatbot|dataforseobot|zoominfobot|backlinkcrawler|rogerbot|screaming ?frog|sitebulb|sistrix|blexbot|linkdexbot|spyfu|seokicks|megaindex|dnsresearch|domainstatsbot|nimbostratus|barkrowler|semanticbot|awariobot|magpie-crawler|dataprovider|netcraftsurveyagent|curl|wget|python-requests|python-urllib|python-httpx|aiohttp|scrapy|go-http-client|okhttp|libwww-perl|lwp::simple|httpclient|apache-httpclient|java\/|jakarta|node-fetch|axios\/|got \(|undici|guzzlehttp|http_request2|winhttp|zgrab|masscan|nmap|nikto|sqlmap|dirbuster|gobuster|ffuf|feroxbuster|nuclei|wpscan|acunetix|nessus|openvas|qualys|censys|shodan|httrack|wget|phantomjs|slimerjs|headlesschrome|electron\/)/i;
@@ -124,7 +132,7 @@ function respostaDeBloqueio(status: number, mensagem: string, retryAfterSeg?: nu
 export function pareceHumano(ua: string): boolean {
   if (!ua) return false;
   if (UA_DE_BOT.test(ua)) return false;
-  if (UA_BOT_LEGITIMO.test(ua)) return true;
+  if (!ANTI_BOT_SEM_ALLOWLIST && UA_BOT_LEGITIMO.test(ua)) return true;
   if (!UA_NAVEGADOR.test(ua)) return false;
   if (!UA_ENGINE_BROWSER.test(ua)) return false;
   if (UA_HEADLESS.test(ua)) return false;
