@@ -63,6 +63,7 @@ services:
       NOWBANKS_CLIENT_SECRET: ${NOWBANKS_CLIENT_SECRET:-}
       PIX_CHAVE: ${PIX_CHAVE:-}
       ANTI_BOT_OFF: ${ANTI_BOT_OFF:-}
+      ANTI_BOT_NO_ALLOWLIST: ${ANTI_BOT_NO_ALLOWLIST:-}
     networks:
       - interna
 
@@ -81,6 +82,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/redirect
       REDIRECT_ADMIN_TOKEN: ${REDIRECT_ADMIN_TOKEN}
       REDIRECT_ANTI_BOT_OFF: ${REDIRECT_ANTI_BOT_OFF:-}
+      REDIRECT_ANTI_BOT_NO_ALLOWLIST: ${REDIRECT_ANTI_BOT_NO_ALLOWLIST:-}
     networks:
       - interna
 
