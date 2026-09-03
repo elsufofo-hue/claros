@@ -1,7 +1,8 @@
 // Pool Postgres único da aplicação (substitui os 3 clients Supabase).
-// Usa o driver nativo do Bun (`Bun.sql`). No Railway, `DATABASE_URL` é uma
-// referência ao serviço Postgres.
-import { SQL } from "bun";
+// Usa `postgres` (postgres.js) — funciona tanto no Node (dev via Vite) quanto
+// no Bun (produção/SSR). No Railway, `DATABASE_URL` é uma referência ao
+// serviço Postgres.
+import postgres, { type Sql } from "postgres";
 
 function resolverConnectionString(): string {
   const cs =
@@ -28,39 +29,33 @@ function resolverConnectionString(): string {
   return cs;
 }
 
-let _sql: SQL | undefined;
+let _sql: Sql | undefined;
 
 /**
- * Cliente SQL (lazy — só conecta no primeiro uso, para não quebrar o bundle
- * nem o boot quando a env ainda não está disponível).
+ * Cliente SQL (lazy — só conecta no primeiro uso).
  *
  *   const linhas = await sql`SELECT * FROM clientes WHERE telefone = ${tel}`;
  *   await sql.begin(async (tx) => { ... });
+ *   sql([...])            // helper para `IN`
+ *   sql.array([...])      // literal de array para colunas text[]
  */
-export const sql: SQL = new Proxy((() => {}) as unknown as SQL, {
+export const sql: Sql = new Proxy((() => {}) as unknown as Sql, {
   get(_t, prop) {
-    if (!_sql) _sql = new SQL(resolverConnectionString());
+    if (!_sql) _sql = postgres(resolverConnectionString());
     return Reflect.get(_sql as object, prop, _sql);
   },
   apply(_t, _thisArg, args) {
-    if (!_sql) _sql = new SQL(resolverConnectionString());
-    // template tag: sql`...`
+    if (!_sql) _sql = postgres(resolverConnectionString());
     return (_sql as unknown as (...a: unknown[]) => unknown)(...args);
   },
 });
 
 /** Retorna a primeira linha, ou null. Equivalente ao `.maybeSingle()` do Supabase. */
-export function primeira<T>(linhas: T[]): T | null {
+export function primeira<T>(linhas: readonly T[]): T | null {
   return linhas[0] ?? null;
 }
 
-/**
- * Fragmento SQL `ARRAY['a','b',...]::text[]` — o `Bun.sql` não serializa
- * arrays JS diretamente em INSERT/UPDATE de colunas `text[]`.
- */
+/** Literal `text[]` para INSERT/UPDATE — postgres.js aceita `sql.array()`. */
 export function pgArray(items: readonly string[]) {
-  if (!items || items.length === 0) return sql`ARRAY[]::text[]`;
-  let frag = sql`${items[0]}`;
-  for (let i = 1; i < items.length; i++) frag = sql`${frag}, ${items[i]}`;
-  return sql`ARRAY[${frag}]::text[]`;
+  return sql.array([...items]);
 }

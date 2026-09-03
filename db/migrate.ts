@@ -2,7 +2,7 @@
 // `.sql` de db/migrations/ que ainda não constam em schema_migrations.
 //
 //   bun run db:migrate
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { sql } from "../src/db/index.ts";
 
@@ -29,7 +29,7 @@ export async function runMigrations(): Promise<void> {
   let novas = 0;
   for (const arquivo of arquivos) {
     if (aplicadas.has(arquivo)) continue;
-    const conteudo = await Bun.file(join(MIGRATIONS_DIR, arquivo)).text();
+    const conteudo = await readFile(join(MIGRATIONS_DIR, arquivo), "utf8");
     console.log(`→ aplicando ${arquivo}`);
     await sql.begin(async (tx) => {
       await tx.unsafe(conteudo);
