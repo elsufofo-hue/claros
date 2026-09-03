@@ -1,0 +1,26 @@
+# Reverse proxy com HTTPS automático (Let's Encrypt).
+# Caddy resolve os certificados sozinho no primeiro acesso a cada domínio —
+# basta o DNS dos dois domínios já apontar para o IP da VPS antes de subir.
+
+{
+	email {$TLS_EMAIL}
+}
+
+# ---- Site principal (claros) ----
+{$SITE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy site:3000 {
+		# Repassa o IP real do visitante (o anti-bot e os formatadores usam).
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+# ---- Serviço de redirect ----
+{$REDIRECT_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy redirect:8080 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+}

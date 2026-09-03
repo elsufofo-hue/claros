@@ -1,0 +1,112 @@
+# Stack completo para rodar tudo numa VPS (Ubuntu 24.04 + Docker).
+#
+#   site      → claros (TanStack Start SSR), banco `claros`
+#   redirect  → serviço de redirect de domínio, banco `redirect`
+#   db        → um Postgres, dois bancos (init em ./postgres-init/)
+#   caddy     → reverse proxy com HTTPS automático (Let's Encrypt) p/ os 2 domínios
+#
+# Só o Caddy publica portas no host (80/443). Site e redirect ficam na rede
+# interna. Uso:
+#
+#   cd deploy
+#   cp .env.example .env      # editar com valores reais
+#   docker compose up -d --build
+#
+# Ver deploy/README.md para o passo a passo completo (DNS, firewall, updates).
+
+name: claros
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Banco criado por padrão pelo entrypoint; o segundo (`redirect`) é criado
+      # pelo script em ./postgres-init/ no primeiro boot.
+      POSTGRES_DB: claros
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d claros"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - interna
+
+  site:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/claros
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      SESSION_SECRET: ${SESSION_SECRET}
+      SITE_URL: https://${SITE_DOMAIN}
+      # Gateways de pagamento — descomente/adicione os que usar
+      CASHINPAY_SECRET_KEY: ${CASHINPAY_SECRET_KEY:-}
+      PROPIX_CLIENT_ID: ${PROPIX_CLIENT_ID:-}
+      PROPIX_CLIENT_SECRET: ${PROPIX_CLIENT_SECRET:-}
+      M2PAY_API_KEY: ${M2PAY_API_KEY:-}
+      NOWBANKS_CLIENT_ID: ${NOWBANKS_CLIENT_ID:-}
+      NOWBANKS_CLIENT_SECRET: ${NOWBANKS_CLIENT_SECRET:-}
+      PIX_CHAVE: ${PIX_CHAVE:-}
+      ANTI_BOT_OFF: ${ANTI_BOT_OFF:-}
+    networks:
+      - interna
+
+  redirect:
+    build:
+      context: ..
+      dockerfile: apps/redirect/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8080
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/redirect
+      REDIRECT_ADMIN_TOKEN: ${REDIRECT_ADMIN_TOKEN}
+      REDIRECT_ANTI_BOT_OFF: ${REDIRECT_ANTI_BOT_OFF:-}
+    networks:
+      - interna
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - site
+      - redirect
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN}
+      REDIRECT_DOMAIN: ${REDIRECT_DOMAIN}
+      TLS_EMAIL: ${TLS_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - interna
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  interna:

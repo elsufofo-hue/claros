@@ -18,6 +18,6 @@ README.md
 .env
 .env.*
 !.env.example
-
-# Serviço de redirect tem build/deploy próprio.
-apps/redirect
+deploy/.env
+deploy/.env.*
+!deploy/.env.example
