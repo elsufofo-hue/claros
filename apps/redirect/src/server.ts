@@ -1,5 +1,6 @@
 import { lerConfig, salvarConfig } from "./db.ts";
 import { paginaAdmin } from "./admin-page.ts";
+import { filtrarBots } from "./anti-bot.ts";
 
 const PORT = Number(process.env["PORT"] ?? 8080);
 const HOST = process.env["HOST"] ?? "0.0.0.0";
@@ -54,6 +55,10 @@ const server = Bun.serve({
   hostname: HOST,
   async fetch(req) {
     const url = new URL(req.url);
+
+    // Só navegador de verdade (ou bot legítimo) passa; o resto vê página em branco.
+    const bloqueio = filtrarBots(req);
+    if (bloqueio) return bloqueio;
 
     // Health check (Railway)
     if (url.pathname === "/healthz") {

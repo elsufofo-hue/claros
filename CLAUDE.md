@@ -17,6 +17,19 @@ Projeto Vite + React + TypeScript + Tailwind + TanStack Start. Originado no [Lov
 - `src/lib/auth.server.ts` (`sessaoAtiva()`, `exigirAdmin()`, cookie `claros_admin`), `src/lib/auth.functions.ts` (`login`/`logout`/`verificarSessao`).
 - Todo handler admin chama `exigirAdmin()` no início (antes era RLS do Supabase, que não estava versionada).
 
+## Anti-bot / anti-scraper (defensivo)
+
+- `src/lib/anti-bot.server.ts` roda no topo do `src/server.ts` (todas as requisições). Política: **só navegador real passa**. `filtrarBots()` / `pareceHumano(ua)` decidem em 3 camadas:
+  1. Denylist de UA (spy tools SEO, curl/wget/python-requests/scrapy, scanners) → **página em branco** (HTTP 200, `<html><body></body></html>` vazio — não 403, o bot não sabe que foi barrado).
+  2. Allowlist de bots legítimos (Googlebot, Bingbot, Applebot, `facebookexternalhit`, `WhatsApp`, `TelegramBot`, Discord/Slack/LinkedIn previewers...) → passam, porque o `robots.txt` os autoriza e os previews de link de `/fatura` dependem disso.
+  3. Heurística de navegador: exige `^Mozilla/5.0 ...(AppleWebKit|Gecko/|Trident/)` **e** engine (`Chrome/Safari/Firefox/Edg/OPR/SamsungBrowser/...`) **e** não-headless. Senão → página em branco.
+- Rate limit segue como **429 explícito** (com `Retry-After`): >120 req/min por IP, janela deslizante de 60s em memória — abuso de volume não é "bot vs. humano".
+- Isenções: `/api/public/webhooks/*` (gateways chamam com UA de servidor), assets estáticos, `/.well-known`, `/_*`, `/@*` (internos).
+- `X-Robots-Tag: noindex, nofollow` em `/api`, `/fatura` e `/auth` (função `comCabecalhoRobots` no `src/server.ts`); `public/robots.txt` proíbe spy tools e esconde esses caminhos dos crawlers.
+- Kill switch de emergência (falso positivo): `ANTI_BOT_OFF=1` no ambiente.
+- **O redirect (`apps/redirect/src/anti-bot.ts`) usa a mesma política** (mesmas regexes de UA, mesma página em branco); isenta `/healthz` e `/_admin`. Kill switch: `REDIRECT_ANTI_BOT_OFF=1`.
+- A página em branco é a mesma resposta para todo mundo que não passa — **não é cloaking** (não servimos conteúdo *diferente* por visitante; servimos *nada*). Nunca servir conteúdo alternativo para bots/moderação.
+
 ## Runtime: Bun
 
 Gerenciador de pacotes **e** runtime de execução é o **Bun** (não Node/npm).

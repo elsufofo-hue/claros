@@ -1,14 +1,55 @@
+# Ferramentas de espionagem/raspagem (SEO spy tools e afins) - proibidas no site todo.
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: DotBot
+Disallow: /
+
+User-agent: PetalBot
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: SerpstatBot
+Disallow: /
+
+User-agent: DataForSeoBot
+Disallow: /
+
+User-agent: ZoominfoBot
+Disallow: /
+
+User-agent: BacklinkCrawler
+Disallow: /
+
+# Buscadores: apenas as paginas publicas de marketing.
 User-agent: Googlebot
-Allow: /
+Disallow: /api/
+Disallow: /fatura/
+Disallow: /auth
 
 User-agent: Bingbot
-Allow: /
+Disallow: /api/
+Disallow: /fatura/
+Disallow: /auth
 
+# Previews de link (WhatsApp/redes sociais): nada de dados de clientes.
 User-agent: Twitterbot
-Allow: /
+Disallow: /api/
+Disallow: /fatura/
 
 User-agent: facebookexternalhit
-Allow: /
+Disallow: /api/
+Disallow: /fatura/
 
 User-agent: *
-Allow: /
+Disallow: /api/
+Disallow: /fatura/
+Disallow: /auth
