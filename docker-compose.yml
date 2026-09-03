@@ -3,13 +3,28 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: fatura-facil
+    container_name: claros
     restart: unless-stopped
     env_file:
       - .env
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
-      PORT: 3000
+      # Porta interna do processo. O host pode sobrescrever com PORT no .env.
+      PORT: ${PORT:-3000}
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
+    healthcheck:
+      # `bun` está na imagem oven/bun:1; sem curl/wget garantidos.
+      test:
+        - CMD
+        - bun
+        - -e
+        - >-
+          fetch(`http://127.0.0.1:${process.env.PORT||3000}/api/health`)
+          .then(r => process.exit(r.ok ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s

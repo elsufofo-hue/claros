@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as FaturaTelefoneRouteImport } from './routes/fatura.$telefone'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as AuthenticatedAdminClientesRouteImport } from './routes/_authenticated/admin.clientes'
@@ -47,6 +48,11 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
   getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const FaturaTelefoneRoute = FaturaTelefoneRouteImport.update({
   id: '/fatura/$telefone',
@@ -134,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
+  '/api/health': typeof ApiHealthRoute
   '/fatura/$telefone': typeof FaturaTelefoneRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/admin/faturas': typeof AuthenticatedAdminFaturasRoute
@@ -153,6 +160,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/api/health': typeof ApiHealthRoute
   '/fatura/$telefone': typeof FaturaTelefoneRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/admin/faturas': typeof AuthenticatedAdminFaturasRoute
@@ -175,6 +183,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
+  '/api/health': typeof ApiHealthRoute
   '/fatura/$telefone': typeof FaturaTelefoneRoute
   '/_authenticated/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/_authenticated/admin/faturas': typeof AuthenticatedAdminFaturasRoute
@@ -197,6 +206,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/admin'
+    | '/api/health'
     | '/fatura/$telefone'
     | '/admin/clientes'
     | '/admin/faturas'
@@ -216,6 +226,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/api/health'
     | '/fatura/$telefone'
     | '/admin/clientes'
     | '/admin/faturas'
@@ -237,6 +248,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/admin'
+    | '/api/health'
     | '/fatura/$telefone'
     | '/_authenticated/admin/clientes'
     | '/_authenticated/admin/faturas'
@@ -258,6 +270,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  ApiHealthRoute: typeof ApiHealthRoute
   FaturaTelefoneRoute: typeof FaturaTelefoneRoute
   ApiPublicCobrancaRoute: typeof ApiPublicCobrancaRoute
   ApiPublicFaturasRoute: typeof ApiPublicFaturasRoute
@@ -297,6 +310,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin'
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/fatura/$telefone': {
       id: '/fatura/$telefone'
@@ -444,6 +464,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  ApiHealthRoute: ApiHealthRoute,
   FaturaTelefoneRoute: FaturaTelefoneRoute,
   ApiPublicCobrancaRoute: ApiPublicCobrancaRoute,
   ApiPublicFaturasRoute: ApiPublicFaturasRoute,
