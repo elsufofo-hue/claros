@@ -71,7 +71,7 @@ Se um `git fetch`/`push` falhar com `Repository not found` ou `could not read Pa
 
 Build pelo `Dockerfile` da raiz — roda em qualquer host que aceite Dockerfile (Railway, Timeweb Cloud, VPS com docker-compose). O `docker-entrypoint.sh` **aplica as migrations pendentes no boot** (`bun run db/migrate.ts`, idempotente via `schema_migrations`) e então sobe o SSR. `HEALTHCHECK` embutido bate em `GET /api/health` (rota pública, isenta do anti-bot; testa o banco com `select 1`).
 
-Variáveis necessárias (o host injeta): `DATABASE_URL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SITE_URL`, e as credenciais dos gateways em uso (`CASHINPAY_SECRET_KEY`, `PROPIX_CLIENT_ID`/`_SECRET`, `M2PAY_API_KEY`, `NOWBANKS_*`, `PIX_CHAVE`). `HOST=0.0.0.0` já é default; `PORT` default 3000 (Railway injeta o dele; Timeweb/VPS usam o default ou sobrescrevem).
+Variáveis necessárias (o host injeta): `DATABASE_URL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SITE_URL`, e as credenciais dos gateways em uso (`CASHINPAY_SECRET_KEY`, `PROPIX_CLIENT_ID`/`_SECRET`, `PIXZYPAY_TOKEN`, `M2PAY_API_KEY`, `NOWBANKS_*`, `PIX_CHAVE`). `HOST=0.0.0.0` já é default; `PORT` default 3000 (Railway injeta o dele; Timeweb/VPS usam o default ou sobrescrevem).
 
 - **Railway:** `DATABASE_URL` = **Add Reference** ao serviço Postgres (`${{ Postgres.DATABASE_PRIVATE_URL }}`, mesmo ambiente).
 - **Timeweb Cloud:** provisionar um Postgres (cluster gerenciado ou container) **antes do primeiro deploy** e colar a connection string em `DATABASE_URL` — sem banco, o entrypoint aborta (`set -e`) e o container fica em crash-loop. Detalhes em `docs/deploy-timeweb.md`.

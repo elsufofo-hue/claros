@@ -293,6 +293,50 @@ const propix: GatewayAdapter = {
   },
 };
 
+// ---------------------------------------------------------------- PixzyPay
+const pixzypay: GatewayAdapter = {
+  nome: "pixzypay",
+  configurado: () => Boolean(process.env["PIXZYPAY_TOKEN"]),
+  async criarPix(e: CriarPixEntrada): Promise<PixCriado> {
+    const { criarCobrancaPix } = await import("@/lib/pixzypay.server");
+    const c = await criarCobrancaPix({
+      centavos: e.centavos,
+      nome: e.nome,
+      telefone: e.telefone,
+      email: e.email ?? null,
+      documento: e.documento ?? null,
+      descricao: e.descricao,
+      referencia: e.referencia,
+      webhookUrl: e.webhookUrl,
+    });
+    if (!c) throw new Error("PixzyPay não retornou a cobrança.");
+    return { transacaoId: c.id, copiaCola: c.copia_cola, qrcode: c.qrcode, status: c.status };
+  },
+  async consultarStatus(id) {
+    const { consultarTransacao } = await import("@/lib/pixzypay.server");
+    return consultarTransacao(id);
+  },
+  pago: (s) => (s ?? "").toString().trim().toLowerCase() === "paid",
+  async lerWebhook(request, corpoBruto): Promise<WebhookLido> {
+    let corpo: any = null;
+    try {
+      corpo = JSON.parse(corpoBruto);
+    } catch {
+      return { valido: false, transacaoId: null, status: null, evento: null };
+    }
+    // A PixzyPay não documenta assinatura: a segurança vem do double-check
+    // feito por statusNaGateway (GET /transactions/{id}) antes da baixa.
+    // Payload: { "event": "paid", "transaction": { "id": ..., "status": "paid", ... } }
+    const dados = corpo?.transaction ?? corpo?.data ?? corpo;
+    return {
+      valido: true,
+      transacaoId: busca(dados, ["id", "transaction_id", "transactionId", "external_id"]),
+      status: busca(dados, ["status", "payment_status"]),
+      evento: busca(corpo, ["event", "type"]),
+    };
+  },
+};
+
 // ------------------------------------------------------------------ M2 Pay
 const m2pay: GatewayAdapter = {
   nome: "m2pay",
@@ -408,6 +452,7 @@ const nowbanks: GatewayAdapter = {
 const REGISTRO: Record<string, GatewayAdapter> = {
   cashinpay,
   propix,
+  pixzypay,
   m2pay,
   nowbanks,
   "pix-estatico": pixEstatico,

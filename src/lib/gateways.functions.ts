@@ -50,6 +50,7 @@ function estaConfigurado(g: {
   if (chave === "cashinpay") return Boolean(process.env["CASHINPAY_SECRET_KEY"]);
   if (chave === "propix")
     return Boolean(process.env["PROPIX_CLIENT_ID"] && process.env["PROPIX_CLIENT_SECRET"]);
+  if (chave === "pixzypay") return Boolean(process.env["PIXZYPAY_TOKEN"]);
   if (chave === "m2pay") return Boolean(process.env["M2PAY_API_KEY"]);
   if (chave === "nowbanks")
     return Boolean(process.env["NOWBANKS_CLIENT_ID"] && process.env["NOWBANKS_CLIENT_SECRET"]);

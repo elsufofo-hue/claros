@@ -490,9 +490,10 @@ function PaginaGateways() {
                     <SelectItem value="generico">REST genérico</SelectItem>
                     <SelectItem value="cashinpay">CashinPay</SelectItem>
                     <SelectItem value="propix">ProPix</SelectItem>
+                    <SelectItem value="pixzypay">PixzyPay</SelectItem>
                     <SelectItem value="m2pay">M2 Pay</SelectItem>
                     <SelectItem value="nowbanks">NowBanks</SelectItem>
-                    
+
                     <SelectItem value="pix-estatico">PIX estático</SelectItem>
                   </SelectContent>
                 </Select>
