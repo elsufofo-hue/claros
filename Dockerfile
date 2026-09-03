@@ -23,9 +23,16 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
 
+# App buildado + o que o runner de migrations precisa (db/, src/db/, e o
+# pacote `postgres` de node_modules).
 COPY --from=build /app/.output ./.output
 COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/db ./db
+COPY --from=build /app/src/db ./src/db
+COPY --from=build /app/node_modules/postgres ./node_modules/postgres
+COPY --from=build /app/docker-entrypoint.sh ./docker-entrypoint.sh
 
 EXPOSE 3000
 
-CMD ["bun", "run", ".output/server/index.mjs"]
+# Aplica migrations pendentes e sobe o servidor.
+CMD ["sh", "./docker-entrypoint.sh"]
