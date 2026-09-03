@@ -1,5 +1,6 @@
 import "./lib/error-capture";
 
+import { filtrarBots } from "./lib/anti-bot.server";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
@@ -44,12 +45,32 @@ function isH3SwallowedErrorBody(body: string): boolean {
   }
 }
 
+// Dados de clientes e do painel não devem vazar para buscadores/spy tools.
+const CAMINHOS_SEM_INDEX = /^\/(api|fatura|auth)(\/|$)/;
+
+function comCabecalhoRobots(request: Request, response: Response): Response {
+  const pathname = new URL(request.url).pathname;
+  if (!CAMINHOS_SEM_INDEX.test(pathname) || response.headers.has("x-robots-tag")) {
+    return response;
+  }
+  const headers = new Headers(response.headers);
+  headers.set("x-robots-tag", "noindex, nofollow");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    const bloqueio = filtrarBots(request);
+    if (bloqueio) return bloqueio;
+
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      return comCabecalhoRobots(request, await normalizeCatastrophicSsrResponse(response));
     } catch (error) {
       console.error(error);
       return new Response(renderErrorPage(), {

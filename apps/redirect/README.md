@@ -31,6 +31,16 @@ roda `bun src/migrate.ts` antes de subir; local, o `dev` não roda — rode
 | `/_admin?token=…` | tela HTML pra ver/editar o destino e o status code (301/302/307/308). Exige `REDIRECT_ADMIN_TOKEN`. |
 | `/healthz` | JSON de status; usado pelo healthcheck do Railway. |
 
+## Anti-bot (filtro de user-agent)
+
+`src/anti-bot.ts` roda no topo do `fetch`: só passa quem tem UA de navegador
+real (`Mozilla/5.0` + engine conhecida, sem headless) ou está na allowlist de
+bots legítimos (Googlebot, Bingbot, previews de link do WhatsApp/Telegram...).
+Todo o resto — `curl`, `python-requests`, scrapers, UA vazio — recebe uma
+**página em branco** (HTTP 200 sem conteúdo), não um 403.
+
+`/healthz` e `/_admin` são isentos. Kill switch: `REDIRECT_ANTI_BOT_OFF=1`.
+
 ## Variáveis de ambiente
 
 | Var | Obrigatória | Descrição |
@@ -39,6 +49,7 @@ roda `bun src/migrate.ts` antes de subir; local, o `dev` não roda — rode
 | `REDIRECT_ADMIN_TOKEN` | pra usar `/_admin` | token de acesso à tela admin. Sem ela, `/_admin` responde 503. |
 | `PORT` | não | porta HTTP (Railway injeta; default 8080). |
 | `HOST` | não | default `0.0.0.0`. |
+| `REDIRECT_ANTI_BOT_OFF` | não | `=1` desliga o filtro anti-bot (emergência/falso positivo). |
 
 ## Deploy no Railway
 
