@@ -92,9 +92,29 @@ const server = Bun.serve({
       }
 
       if (req.method === "POST") {
-        const form = await req.formData();
-        const destino = String(form.get("destino") ?? "").trim();
-        const statusCode = Number(form.get("status_code") ?? 302);
+        // Parse manual do corpo urlencoded. `req.formData()` do Bun quebra com
+        // ERR_FORMDATA_PARSE_ERROR quando um proxy à frente (Caddy) reescreve o
+        // Content-Type ou recomprime o corpo; URLSearchParams não depende disso.
+        const ct = req.headers.get("content-type") ?? "";
+        let destino = "";
+        let statusCode = 302;
+        try {
+          if (ct.includes("application/x-www-form-urlencoded") || ct === "") {
+            const params = new URLSearchParams(await req.text());
+            destino = (params.get("destino") ?? "").trim();
+            statusCode = Number(params.get("status_code") ?? 302);
+          } else {
+            const form = await req.formData();
+            destino = String(form.get("destino") ?? "").trim();
+            statusCode = Number(form.get("status_code") ?? 302);
+          }
+        } catch (err) {
+          console.error("[_admin] falha ao ler o formulário:", err);
+          return new Response(
+            paginaAdmin({ erro: "Não foi possível ler o formulário. Tente novamente." }),
+            { status: 400, headers: { "content-type": "text/html; charset=utf-8" } },
+          );
+        }
         if (!/^https?:\/\//i.test(destino)) {
           return new Response(paginaAdmin({ erro: "Destino precisa começar com http:// ou https://" }), {
             status: 400,

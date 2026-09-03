@@ -63,7 +63,7 @@ export function paginaAdmin({ config, ok, erro }: Opts): string {
   ${ok ? `<div class="msg ok">${escapar(ok)}</div>` : ""}
   ${erro ? `<div class="msg err">${escapar(erro)}</div>` : ""}
 
-  <form method="post">
+  <form method="post" enctype="application/x-www-form-urlencoded">
     <label for="destino">Destino</label>
     <input id="destino" name="destino" type="url" required placeholder="https://site-de-destino.com"
            value="${escapar(destino)}">
