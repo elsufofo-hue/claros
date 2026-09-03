@@ -13,3 +13,11 @@ dist-ssr
 Dockerfile
 docker-compose.yml
 README.md
+
+# Segredos locais nunca entram na imagem — o host injeta as env vars.
+.env
+.env.*
+!.env.example
+
+# Serviço de redirect tem build/deploy próprio.
+apps/redirect

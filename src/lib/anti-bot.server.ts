@@ -48,7 +48,14 @@ const UA_HEADLESS = /(headless|puppeteer|playwright|selenium|webdriver|phantomjs
 
 const ASSET = /\.(js|mjs|css|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|txt|xml|json)$/i;
 
-const PREFIXOS_ISENTOS = ["/api/public/webhooks", "/.well-known", "/_", "/__", "/@"];
+const PREFIXOS_ISENTOS = [
+  "/api/public/webhooks", // gateways chamam com UA de servidor
+  "/api/health", // healthcheck do host (Timeweb/Railway/compose) usa UA de cliente HTTP
+  "/.well-known",
+  "/_",
+  "/__",
+  "/@",
+];
 
 const JANELA_MS = 60_000;
 const LIMITE_POR_IP = 120;

@@ -1,12 +1,12 @@
 # claros
 
-Projeto Vite + React + TypeScript + Tailwind + TanStack Start. Originado no [Lovable](https://lovable.dev) (ver `AGENTS.md`), mas o **deploy é no Railway** e o **Supabase foi removido** (migrado para Postgres puro).
+Projeto Vite + React + TypeScript + Tailwind + TanStack Start. Originado no [Lovable](https://lovable.dev) (ver `AGENTS.md`), mas o **deploy é por Dockerfile** (Railway, Timeweb Cloud ou docker-compose) e o **Supabase foi removido** (migrado para Postgres puro).
 
 ## Banco de dados: Postgres puro (sem Supabase)
 
 - Cliente único: `src/db/index.ts` → `sql` (pool `Bun.sql` lazy). Helpers: `primeira()` (= `.maybeSingle()`), `pgArray()` (colunas `text[]` — `Bun.sql` não serializa array JS direto).
 - Schema versionado em `db/migrations/*.sql`; runner: `bun run db:migrate` (roda no boot do Docker também).
-- `DATABASE_URL` obrigatória. No Railway: referência ao serviço Postgres (`${{ Postgres.DATABASE_PRIVATE_URL }}` via **Add Reference**, mesmo ambiente).
+- `DATABASE_URL` obrigatória (ver seção "Deploy" para como setar em cada host).
 - Retornos ao cliente: `numeric` vira `::float8` e `date` vira `to_char(..., 'YYYY-MM-DD')` — senão chegam como string/ISO e quebram os formatadores.
 - `IN` com array: `WHERE col IN ${sql(arrayJs)}` (não `= ANY(${...})`).
 - Sem realtime: o dashboard usa polling (`refetchInterval`).
@@ -67,9 +67,15 @@ Se um `git fetch`/`push` falhar com `Repository not found` ou `could not read Pa
 - Raiz: o site (não movido para `apps/web`).
 - `apps/redirect/`: serviço de redirect independente (domínio único → destino), Postgres próprio, deploy separado no Railway (`apps/redirect/Dockerfile`). Ver `apps/redirect/README.md`.
 
-## Deploy no Railway
+## Deploy (Dockerfile portátil)
 
-Serviço do site: build pelo `Dockerfile` (raiz). Variáveis necessárias: `DATABASE_URL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SITE_URL`, `PORT`/`HOST` (Railway injeta `PORT`), e as credenciais dos gateways em uso (`CASHINPAY_SECRET_KEY`, `PROPIX_CLIENT_ID`/`_SECRET`, `M2PAY_API_KEY`, `NOWBANKS_*`, `PIX_CHAVE`). Rodar `bun run db:migrate` uma vez contra o Postgres novo (o Dockerfile do site ainda **não** roda migrate automático — fazer manual ou adicionar ao CMD).
+Build pelo `Dockerfile` da raiz — roda em qualquer host que aceite Dockerfile (Railway, Timeweb Cloud, VPS com docker-compose). O `docker-entrypoint.sh` **aplica as migrations pendentes no boot** (`bun run db/migrate.ts`, idempotente via `schema_migrations`) e então sobe o SSR. `HEALTHCHECK` embutido bate em `GET /api/health` (rota pública, isenta do anti-bot; testa o banco com `select 1`).
+
+Variáveis necessárias (o host injeta): `DATABASE_URL`, `ADMIN_PASSWORD`, `SESSION_SECRET`, `SITE_URL`, e as credenciais dos gateways em uso (`CASHINPAY_SECRET_KEY`, `PROPIX_CLIENT_ID`/`_SECRET`, `M2PAY_API_KEY`, `NOWBANKS_*`, `PIX_CHAVE`). `HOST=0.0.0.0` já é default; `PORT` default 3000 (Railway injeta o dele; Timeweb/VPS usam o default ou sobrescrevem).
+
+- **Railway:** `DATABASE_URL` = **Add Reference** ao serviço Postgres (`${{ Postgres.DATABASE_PRIVATE_URL }}`, mesmo ambiente).
+- **Timeweb Cloud:** provisionar um Postgres (cluster gerenciado ou container) **antes do primeiro deploy** e colar a connection string em `DATABASE_URL` — sem banco, o entrypoint aborta (`set -e`) e o container fica em crash-loop. Detalhes em `docs/deploy-timeweb.md`.
+- **Local:** `docker compose up --build` (lê `.env`; `.env*` fica fora da imagem via `.dockerignore`).
 
 ## Não reescrever histórico publicado
 
