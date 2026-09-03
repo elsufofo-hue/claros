@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS clientes (
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS clientes_telefone_idx ON clientes (telefone);
+-- telefone é a chave natural do cliente (upsert por telefone na importação)
+CREATE UNIQUE INDEX IF NOT EXISTS clientes_telefone_key ON clientes (telefone);
 
 -- ---------------------------------------------------------------------------
 -- faturas
