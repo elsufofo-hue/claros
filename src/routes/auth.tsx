@@ -1,14 +1,13 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Loader2, Lock, ShieldCheck } from "lucide-react";
+import { Loader2, Lock } from "lucide-react";
 import { toast } from "sonner";
 
 import logo from "@/assets/logo-claro.png";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { supabase } from "@/integrations/supabase/client";
+import { login, verificarSessao } from "@/lib/auth.functions";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -26,75 +25,31 @@ export const Route = createFileRoute("/auth")({
 
 function PaginaAuth() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
-  const [nome, setNome] = useState("");
   const [carregando, setCarregando] = useState(false);
 
-  async function ehAdmin(userId: string) {
-    const { data } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .eq("role", "admin")
-      .maybeSingle();
-    return Boolean(data);
-  }
-
   useEffect(() => {
-    void supabase.auth.getUser().then(async ({ data }) => {
-      if (data.user && (await ehAdmin(data.user.id))) {
-        navigate({ to: "/admin", replace: true });
-      }
+    void verificarSessao().then(({ autenticado }) => {
+      if (autenticado) navigate({ to: "/admin", replace: true });
     });
   }, [navigate]);
-
-  async function concluirAcesso(userId: string) {
-    if (await ehAdmin(userId)) {
-      setCarregando(false);
-      navigate({ to: "/admin", replace: true });
-      return;
-    }
-    await supabase.auth.signOut();
-    setCarregando(false);
-    toast.error("Acesso restrito", {
-      description: "Esta conta não tem permissão de administrador.",
-    });
-  }
 
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
     setCarregando(true);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
-    if (error || !data.user) {
-      setCarregando(false);
-      toast.error("Não foi possível entrar", { description: "Verifique o e-mail e a senha." });
-      return;
-    }
-    await concluirAcesso(data.user.id);
-  }
-
-
-  async function cadastrar(e: React.FormEvent) {
-    e.preventDefault();
-    setCarregando(true);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password: senha,
-      options: { emailRedirectTo: window.location.origin, data: { nome } },
-    });
-    if (error) {
-      setCarregando(false);
-      toast.error("Não foi possível cadastrar", { description: error.message });
-      return;
-    }
-    if (data.session && data.user) {
-        await concluirAcesso(data.user.id);
-    } else {
-      setCarregando(false);
-      toast.success("Cadastro criado", {
-        description: "Confirme o e-mail enviado para ativar o acesso.",
+    try {
+      const { ok } = await login({ data: { senha } });
+      if (!ok) {
+        toast.error("Senha incorreta");
+        return;
+      }
+      navigate({ to: "/admin", replace: true });
+    } catch {
+      toast.error("Não foi possível entrar", {
+        description: "Tente novamente em instantes.",
       });
+    } finally {
+      setCarregando(false);
     }
   }
 
@@ -116,82 +71,23 @@ function PaginaAuth() {
             </div>
           </div>
 
-          <p className="mb-5 flex items-center gap-2 rounded-xl border border-success/25 bg-success/10 px-3 py-2 text-xs font-medium text-success">
-            <ShieldCheck className="size-4 shrink-0" />
-            Banco de dados e autenticação conectados — nenhuma configuração adicional é necessária.
-          </p>
-
-          <Tabs defaultValue="entrar">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="entrar">Entrar</TabsTrigger>
-              <TabsTrigger value="criar">Criar conta</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="entrar">
-              <form className="space-y-4 pt-4" onSubmit={entrar}>
-                <div className="space-y-2">
-                  <Label htmlFor="email">E-mail</Label>
-                  <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="senha">Senha</Label>
-                    <Link
-                      to="/forgot-password"
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      Esqueci minha senha
-                    </Link>
-                  </div>
-                  <Input
-                    id="senha"
-                    type="password"
-                    required
-                    value={senha}
-                    onChange={(e) => setSenha(e.target.value)}
-                  />
-                </div>
-                <Button type="submit" className="w-full" size="lg" disabled={carregando}>
-                  {carregando ? <Loader2 className="size-4 animate-spin" /> : null}
-                  Entrar
-                </Button>
-              </form>
-            </TabsContent>
-
-            <TabsContent value="criar">
-              <form className="space-y-4 pt-4" onSubmit={cadastrar}>
-                <div className="space-y-2">
-                  <Label htmlFor="nome">Nome</Label>
-                  <Input id="nome" required value={nome} onChange={(e) => setNome(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email2">E-mail</Label>
-                  <Input
-                    id="email2"
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="senha2">Senha</Label>
-                  <Input
-                    id="senha2"
-                    type="password"
-                    required
-                    minLength={6}
-                    value={senha}
-                    onChange={(e) => setSenha(e.target.value)}
-                  />
-                </div>
-                <Button type="submit" className="w-full" size="lg" disabled={carregando}>
-                  {carregando ? <Loader2 className="size-4 animate-spin" /> : null}
-                  Criar conta de administrador
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
+          <form className="space-y-4" onSubmit={entrar}>
+            <div className="space-y-2">
+              <Label htmlFor="senha">Senha</Label>
+              <Input
+                id="senha"
+                type="password"
+                required
+                autoFocus
+                value={senha}
+                onChange={(e) => setSenha(e.target.value)}
+              />
+            </div>
+            <Button type="submit" className="w-full" size="lg" disabled={carregando}>
+              {carregando ? <Loader2 className="size-4 animate-spin" /> : null}
+              Entrar
+            </Button>
+          </form>
         </div>
 
         <p className="mt-6 text-center text-sm text-muted-foreground">

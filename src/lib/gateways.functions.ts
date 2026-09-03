@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { ESTRATEGIAS } from "@/lib/gateways/types";
 
 export type GatewayConfig = {
@@ -26,8 +25,20 @@ export type RoteamentoConfig = {
   novo_pix_por_acesso: boolean;
 };
 
-const COLUNAS =
-  "id, slug, rotulo, adapter, ativo, prioridade, api_url, ambiente, limite_diario, webhook_url, secret_names, observacoes";
+type GatewayRow = {
+  id: string;
+  slug: string;
+  rotulo: string;
+  adapter: string;
+  ativo: boolean;
+  prioridade: number;
+  api_url: string | null;
+  ambiente: string;
+  limite_diario: number | null;
+  webhook_url: string | null;
+  secret_names: string[] | null;
+  observacoes: string | null;
+};
 
 /** Confere apenas a PRESENÇA dos segredos — nenhum valor sai do servidor. */
 function estaConfigurado(g: {
@@ -37,7 +48,8 @@ function estaConfigurado(g: {
 }): boolean {
   const chave = g.adapter || g.slug;
   if (chave === "cashinpay") return Boolean(process.env["CASHINPAY_SECRET_KEY"]);
-  if (chave === "propix") return Boolean(process.env["PROPIX_CLIENT_ID"] && process.env["PROPIX_CLIENT_SECRET"]);
+  if (chave === "propix")
+    return Boolean(process.env["PROPIX_CLIENT_ID"] && process.env["PROPIX_CLIENT_SECRET"]);
   if (chave === "m2pay") return Boolean(process.env["M2PAY_API_KEY"]);
   if (chave === "nowbanks")
     return Boolean(process.env["NOWBANKS_CLIENT_ID"] && process.env["NOWBANKS_CLIENT_SECRET"]);
@@ -46,17 +58,20 @@ function estaConfigurado(g: {
   return nomes.length > 0 && nomes.every((n) => Boolean(process.env[n]));
 }
 
-export const listarGateways = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<GatewayConfig[]> => {
-    const { data, error } = await context.supabase
-      .from("gateways_config")
-      .select(COLUNAS)
-      .order("prioridade", { ascending: true });
+export const listarGateways = createServerFn({ method: "POST" }).handler(
+  async (): Promise<GatewayConfig[]> => {
+    const { exigirAdmin } = await import("./auth.server");
+    exigirAdmin();
+    const { sql } = await import("@/db");
 
-    if (error) throw new Error("Não foi possível carregar os gateways.");
+    const linhas = (await sql`
+      SELECT id, slug, rotulo, adapter, ativo, prioridade, api_url, ambiente,
+             limite_diario, webhook_url, secret_names, observacoes
+      FROM gateways_config
+      ORDER BY prioridade ASC
+    `) as unknown as GatewayRow[];
 
-    return (data ?? []).map((g) => ({
+    return linhas.map((g) => ({
       id: g.id,
       slug: g.slug,
       rotulo: g.rotulo,
@@ -71,22 +86,33 @@ export const listarGateways = createServerFn({ method: "POST" })
       observacoes: g.observacoes,
       configurado: estaConfigurado(g),
     }));
-  });
+  },
+);
 
-export const lerRoteamento = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<RoteamentoConfig> => {
-    const { data } = await context.supabase
-      .from("roteamento_config")
-      .select("estrategia, gateway_fixa, novo_pix_por_acesso")
-      .eq("id", true)
-      .maybeSingle();
+export const lerRoteamento = createServerFn({ method: "POST" }).handler(
+  async (): Promise<RoteamentoConfig> => {
+    const { exigirAdmin } = await import("./auth.server");
+    exigirAdmin();
+    const { sql, primeira } = await import("@/db");
+
+    const data = primeira<{
+      estrategia: string | null;
+      gateway_fixa: string | null;
+      novo_pix_por_acesso: boolean | null;
+    }>(
+      await sql`
+        SELECT estrategia, gateway_fixa, novo_pix_por_acesso
+        FROM roteamento_config
+        WHERE id = true
+      `,
+    );
     return {
       estrategia: data?.estrategia ?? "prioridade",
       gateway_fixa: data?.gateway_fixa ?? null,
       novo_pix_por_acesso: data?.novo_pix_por_acesso ?? true,
     };
-  });
+  },
+);
 
 const roteamentoSchema = z.object({
   estrategia: z.enum(ESTRATEGIAS),
@@ -95,22 +121,27 @@ const roteamentoSchema = z.object({
 });
 
 export const salvarRoteamento = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => roteamentoSchema.parse(data))
-  .handler(async ({ data, context }): Promise<{ ok: true }> => {
-    await exigirAdmin(context.userId);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
-      .from("roteamento_config")
-      .update({
-        estrategia: data.estrategia,
-        gateway_fixa: data.estrategia === "fixa" ? (data.gateway_fixa ?? null) : null,
-        ...(typeof data.novo_pix_por_acesso === "boolean"
-          ? { novo_pix_por_acesso: data.novo_pix_por_acesso }
-          : {}),
-      })
-      .eq("id", true);
-    if (error) throw new Error("Não foi possível salvar a estratégia.");
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    const { exigirAdmin } = await import("./auth.server");
+    exigirAdmin();
+    const { sql } = await import("@/db");
+
+    const gatewayFixa = data.estrategia === "fixa" ? (data.gateway_fixa ?? null) : null;
+    if (typeof data.novo_pix_por_acesso === "boolean") {
+      await sql`
+        UPDATE roteamento_config
+        SET estrategia = ${data.estrategia}, gateway_fixa = ${gatewayFixa},
+            novo_pix_por_acesso = ${data.novo_pix_por_acesso}, updated_at = now()
+        WHERE id = true
+      `;
+    } else {
+      await sql`
+        UPDATE roteamento_config
+        SET estrategia = ${data.estrategia}, gateway_fixa = ${gatewayFixa}, updated_at = now()
+        WHERE id = true
+      `;
+    }
     return { ok: true };
   });
 
@@ -134,45 +165,36 @@ const gatewaySchema = z.object({
   ativo: z.boolean(),
 });
 
-/** Somente administradores podem alterar gateways. */
-async function exigirAdmin(userId: string): Promise<void> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data } = await supabaseAdmin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("role", "admin")
-    .maybeSingle();
-  if (!data) throw new Error("Acesso restrito a administradores.");
-}
-
 export const salvarGateway = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => gatewaySchema.parse(data))
-  .handler(async ({ data, context }): Promise<{ ok: true }> => {
-    await exigirAdmin(context.userId);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    const { exigirAdmin } = await import("./auth.server");
+    exigirAdmin();
+    const { sql, pgArray } = await import("@/db");
 
-    const registro = {
-      slug: data.slug,
-      rotulo: data.rotulo,
-      adapter: data.adapter,
-      api_url: data.api_url ?? null,
-      ambiente: data.ambiente,
-      prioridade: data.prioridade,
-      limite_diario: data.limite_diario ?? null,
-      webhook_url: data.webhook_url ?? null,
-      secret_names: data.secret_names,
-      observacoes: data.observacoes ?? null,
-      ativo: data.ativo,
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error } = data.id
-      ? await supabaseAdmin.from("gateways_config").update(registro).eq("id", data.id)
-      : await supabaseAdmin.from("gateways_config").insert(registro);
-
-    if (error) throw new Error("Não foi possível salvar o gateway.");
+    if (data.id) {
+      await sql`
+        UPDATE gateways_config SET
+          slug = ${data.slug}, rotulo = ${data.rotulo}, adapter = ${data.adapter},
+          api_url = ${data.api_url ?? null}, ambiente = ${data.ambiente},
+          prioridade = ${data.prioridade}, limite_diario = ${data.limite_diario ?? null},
+          webhook_url = ${data.webhook_url ?? null}, secret_names = ${pgArray(data.secret_names)},
+          observacoes = ${data.observacoes ?? null}, ativo = ${data.ativo}, updated_at = now()
+        WHERE id = ${data.id}
+      `;
+    } else {
+      await sql`
+        INSERT INTO gateways_config (
+          slug, rotulo, adapter, api_url, ambiente, prioridade, limite_diario,
+          webhook_url, secret_names, observacoes, ativo
+        ) VALUES (
+          ${data.slug}, ${data.rotulo}, ${data.adapter}, ${data.api_url ?? null},
+          ${data.ambiente}, ${data.prioridade}, ${data.limite_diario ?? null},
+          ${data.webhook_url ?? null}, ${pgArray(data.secret_names)}, ${data.observacoes ?? null},
+          ${data.ativo}
+        )
+      `;
+    }
     return { ok: true };
   });
 
@@ -183,56 +205,51 @@ const atualizarSchema = z.object({
 });
 
 export const atualizarGateway = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => atualizarSchema.parse(data))
-  .handler(async ({ data, context }): Promise<{ ok: true }> => {
-    const patch: { updated_at: string; ativo?: boolean; prioridade?: number } = {
-      updated_at: new Date().toISOString(),
-    };
-    if (typeof data.ativo === "boolean") patch.ativo = data.ativo;
-    if (typeof data.prioridade === "number") patch.prioridade = data.prioridade;
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    const { exigirAdmin } = await import("./auth.server");
+    exigirAdmin();
+    const { sql } = await import("@/db");
 
-    const { error } = await context.supabase
-      .from("gateways_config")
-      .update(patch)
-      .eq("id", data.id);
-
-    if (error) throw new Error("Não foi possível salvar a alteração.");
+    if (typeof data.ativo === "boolean" && typeof data.prioridade === "number") {
+      await sql`UPDATE gateways_config SET ativo = ${data.ativo}, prioridade = ${data.prioridade}, updated_at = now() WHERE id = ${data.id}`;
+    } else if (typeof data.ativo === "boolean") {
+      await sql`UPDATE gateways_config SET ativo = ${data.ativo}, updated_at = now() WHERE id = ${data.id}`;
+    } else if (typeof data.prioridade === "number") {
+      await sql`UPDATE gateways_config SET prioridade = ${data.prioridade}, updated_at = now() WHERE id = ${data.id}`;
+    }
     return { ok: true };
   });
 
 export const removerGateway = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
-  .handler(async ({ data, context }): Promise<{ ok: true }> => {
-    await exigirAdmin(context.userId);
-    const { error } = await context.supabase.from("gateways_config").delete().eq("id", data.id);
-    if (error) throw new Error("Não foi possível remover o gateway.");
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    const { exigirAdmin } = await import("./auth.server");
+    exigirAdmin();
+    const { sql } = await import("@/db");
+    await sql`DELETE FROM gateways_config WHERE id = ${data.id}`;
     return { ok: true };
   });
 
 /** Define um único gateway ativo (modo exclusivo). */
 export const usarSomente = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
-  .handler(async ({ data, context }): Promise<{ ok: true }> => {
-    await context.supabase.from("gateways_config").update({ ativo: false }).neq("id", data.id);
-    const { error } = await context.supabase
-      .from("gateways_config")
-      .update({ ativo: true })
-      .eq("id", data.id);
-    if (error) throw new Error("Não foi possível ativar o gateway.");
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    const { exigirAdmin } = await import("./auth.server");
+    exigirAdmin();
+    const { sql } = await import("@/db");
+    await sql`UPDATE gateways_config SET ativo = false, updated_at = now() WHERE id <> ${data.id}`;
+    await sql`UPDATE gateways_config SET ativo = true, updated_at = now() WHERE id = ${data.id}`;
     return { ok: true };
   });
 
 /** Ativa todos os gateways (modo rotação). */
-export const ativarTodos = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<{ ok: true }> => {
-    const { error } = await context.supabase
-      .from("gateways_config")
-      .update({ ativo: true })
-      .neq("slug", "");
-    if (error) throw new Error("Não foi possível ativar os gateways.");
+export const ativarTodos = createServerFn({ method: "POST" }).handler(
+  async (): Promise<{ ok: true }> => {
+    const { exigirAdmin } = await import("./auth.server");
+    exigirAdmin();
+    const { sql } = await import("@/db");
+    await sql`UPDATE gateways_config SET ativo = true, updated_at = now()`;
     return { ok: true };
-  });
+  },
+);

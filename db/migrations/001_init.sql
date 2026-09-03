@@ -243,15 +243,16 @@ CREATE TABLE IF NOT EXISTS user_roles (
 -- Uma linha por telefone: a fatura mais relevante (não paga primeiro, depois
 -- vencimento mais recente).
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW faturas_por_telefone AS
+DROP VIEW IF EXISTS faturas_por_telefone;
+CREATE VIEW faturas_por_telefone AS
 SELECT DISTINCT ON (c.telefone)
   c.telefone                                   AS telefone,
   c.nome                                       AS nome,
   f.id                                         AS fatura_id,
-  f.valor_original                             AS valor_em_aberto,
-  f.valor_desconto                             AS valor_com_desconto,
+  f.valor_original::float8                      AS valor_em_aberto,
+  f.valor_desconto::float8                      AS valor_com_desconto,
   f.status::text                               AS status,
-  f.vencimento                                 AS data_vencimento,
+  to_char(f.vencimento, 'YYYY-MM-DD')          AS data_vencimento,
   f.pix_copia_cola                             AS pix_copia_e_cola,
   f.boleto_codigo                              AS boleto_codigo,
   f.boleto_url                                 AS boleto_url,

@@ -1,8 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-
 const acessoSchema = z.object({
   pagina: z.string().min(1).max(120),
   telefone_consultado: z.string().max(20).optional().nullable(),
@@ -18,14 +16,14 @@ export const registrarAcesso = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => acessoSchema.parse(data))
   .handler(async ({ data }): Promise<{ ok: boolean }> => {
     try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await supabaseAdmin.from("acessos").insert({
-        pagina: data.pagina,
-        telefone_consultado: data.telefone_consultado ?? null,
-        sucesso: data.sucesso ?? false,
-        valor_original: data.valor_original ?? null,
-        valor_desconto: data.valor_desconto ?? null,
-      });
+      const { sql } = await import("@/db");
+      await sql`
+        INSERT INTO acessos (pagina, telefone_consultado, sucesso, valor_original, valor_desconto)
+        VALUES (
+          ${data.pagina}, ${data.telefone_consultado ?? null}, ${data.sucesso ?? false},
+          ${data.valor_original ?? null}, ${data.valor_desconto ?? null}
+        )
+      `;
       return { ok: true };
     } catch {
       return { ok: false };
@@ -75,29 +73,33 @@ function limites() {
 }
 
 /** Métricas do painel — apenas administradores autenticados. */
-export const obterMetricasAcessos = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<MetricasAcessos> => {
-    const { data: papel, error: erroPapel } = await context.supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", context.userId)
-      .eq("role", "admin")
-      .maybeSingle();
-    if (erroPapel || !papel) throw new Error("Acesso restrito a administradores.");
+export const obterMetricasAcessos = createServerFn({ method: "GET" }).handler(
+  async (): Promise<MetricasAcessos> => {
+    const { exigirAdmin } = await import("./auth.server");
+    exigirAdmin();
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { sql } = await import("@/db");
     const { inicioDia, inicioMes } = limites();
 
-    const { data: linhas, error } = await supabaseAdmin
-      .from("acessos")
-      .select("id, data_hora, pagina, telefone_consultado, sucesso, valor_original, valor_desconto")
-      .order("data_hora", { ascending: false })
-      .limit(50000);
-
-    if (error) throw new Error("Não foi possível carregar as métricas.");
-
-    const registros = linhas ?? [];
+    let registros: {
+      id: string;
+      data_hora: string;
+      pagina: string;
+      telefone_consultado: string | null;
+      sucesso: boolean;
+      valor_original: number | null;
+      valor_desconto: number | null;
+    }[];
+    try {
+      registros = (await sql`
+        SELECT id, data_hora, pagina, telefone_consultado, sucesso, valor_original, valor_desconto
+        FROM acessos
+        ORDER BY data_hora DESC
+        LIMIT 50000
+      `) as unknown as typeof registros;
+    } catch {
+      throw new Error("Não foi possível carregar as métricas.");
+    }
     const m: MetricasAcessos = {
       clientes_total: 0,
       clientes_hoje: 0,
@@ -186,26 +188,33 @@ export const obterMetricasAcessos = createServerFn({ method: "GET" })
     }
 
     return m;
-  });
+  },
+);
+
+/** Total de clientes cadastrados — apenas administradores. */
+export const contarClientes = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{ total: number }> => {
+    const { exigirAdmin } = await import("./auth.server");
+    exigirAdmin();
+
+    const { sql, primeira } = await import("@/db");
+    const row = primeira<{ n: number }>(
+      await sql`SELECT count(*)::int AS n FROM clientes`,
+    );
+    return { total: row?.n ?? 0 };
+  },
+);
 
 /** Apaga todo o histórico de acessos/consultas — apenas administradores. */
-export const limparAcessos = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<{ removidos: number }> => {
-    const { data: papel, error: erroPapel } = await context.supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", context.userId)
-      .eq("role", "admin")
-      .maybeSingle();
-    if (erroPapel || !papel) throw new Error("Acesso restrito a administradores.");
+export const limparAcessos = createServerFn({ method: "POST" }).handler(
+  async (): Promise<{ removidos: number }> => {
+    const { exigirAdmin } = await import("./auth.server");
+    exigirAdmin();
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
-      .from("acessos")
-      .delete()
-      .neq("id", "00000000-0000-0000-0000-000000000000")
-      .select("id");
-    if (error) throw new Error(`Erro ao limpar histórico: ${error.message}`);
-    return { removidos: data?.length ?? 0 };
-  });
+    const { sql, primeira } = await import("@/db");
+    const row = primeira<{ n: number }>(
+      await sql`WITH d AS (DELETE FROM acessos RETURNING 1) SELECT count(*)::int AS n FROM d`,
+    );
+    return { removidos: row?.n ?? 0 };
+  },
+);

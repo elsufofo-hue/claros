@@ -42,7 +42,7 @@ export type ConsultaResultado = {
 export const consultarFaturas = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => consultaSchema.parse(data))
   .handler(async ({ data }): Promise<ConsultaResultado> => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { sql, primeira } = await import("@/db");
 
     // Variantes toleram cadastros gravados com/sem DDI e com/sem o 9 extra.
     const t = data.telefone;
@@ -50,15 +50,19 @@ export const consultarFaturas = createServerFn({ method: "POST" })
     if (t.length === 11 && t[2] === "9") variantes.add(t.slice(0, 2) + t.slice(3));
     if (t.length === 10) variantes.add(`${t.slice(0, 2)}9${t.slice(2)}`);
 
-    const { data: clientes, error: erroCliente } = await supabaseAdmin
-      .from("clientes")
-      .select("id, nome, telefone")
-      .in("telefone", [...variantes])
-      .limit(1);
-
-
-    if (erroCliente) throw new Error("Não foi possível consultar no momento.");
-    const cliente = clientes?.[0];
+    let cliente: { id: string; nome: string; telefone: string } | null;
+    try {
+      cliente = primeira(
+        await sql`
+          SELECT id, nome, telefone
+          FROM clientes
+          WHERE telefone IN ${sql([...variantes])}
+          LIMIT 1
+        `,
+      );
+    } catch {
+      throw new Error("Não foi possível consultar no momento.");
+    }
 
     // Registro de acesso (silencioso, invisível para o visitante).
     const registrar = async (
@@ -67,13 +71,10 @@ export const consultarFaturas = createServerFn({ method: "POST" })
       valorDesconto: number | null,
     ) => {
       try {
-        await supabaseAdmin.from("acessos").insert({
-          pagina: "/fatura",
-          telefone_consultado: t,
-          sucesso,
-          valor_original: valorOriginal,
-          valor_desconto: valorDesconto,
-        });
+        await sql`
+          INSERT INTO acessos (pagina, telefone_consultado, sucesso, valor_original, valor_desconto)
+          VALUES ('/fatura', ${t}, ${sucesso}, ${valorOriginal}, ${valorDesconto})
+        `;
       } catch {
         /* nunca interrompe a consulta do cliente */
       }
@@ -94,29 +95,37 @@ export const consultarFaturas = createServerFn({ method: "POST" })
       .toISOString()
       .slice(0, 10);
 
-    const { data: faturas, error: erroFaturas } = await supabaseAdmin
-      .from("faturas")
-      .select("id, descricao, referencia, valor_original, valor_desconto, vencimento, status")
-      .eq("cliente_id", cliente.id)
-      .in("status", ["em_aberto", "vencida", "em_processamento", "falhou", "expirada"])
-      .gte("vencimento", primeiroDia)
-      .lte("vencimento", ultimoDia)
-      .order("vencimento", { ascending: false })
-      .limit(1);
+    let faturas: FaturaPublica[];
+    try {
+      faturas = (await sql`
+        SELECT id, descricao, referencia,
+               valor_original::float8 AS valor_original,
+               valor_desconto::float8 AS valor_desconto,
+               to_char(vencimento, 'YYYY-MM-DD') AS vencimento,
+               status::text AS status
+        FROM faturas
+        WHERE cliente_id = ${cliente.id}
+          AND status IN ('em_aberto', 'vencida', 'em_processamento', 'falhou', 'expirada')
+          AND vencimento >= ${primeiroDia}
+          AND vencimento <= ${ultimoDia}
+        ORDER BY vencimento DESC
+        LIMIT 1
+      `) as unknown as FaturaPublica[];
+    } catch {
+      throw new Error("Não foi possível consultar no momento.");
+    }
 
-    if (erroFaturas) throw new Error("Não foi possível consultar no momento.");
-
-    const primeira = faturas?.[0];
+    const prim = faturas[0];
     await registrar(
-      Boolean(primeira),
-      primeira ? Number(primeira.valor_original) : null,
-      primeira ? Number(primeira.valor_desconto) || Number(primeira.valor_original) : null,
+      Boolean(prim),
+      prim ? Number(prim.valor_original) : null,
+      prim ? Number(prim.valor_desconto) || Number(prim.valor_original) : null,
     );
 
     return {
       encontrado: true,
       cliente: { nome: cliente.nome, telefone: cliente.telefone ?? "" },
-      faturas: (faturas ?? []).map((f) => ({
+      faturas: faturas.map((f) => ({
         id: f.id,
         descricao: f.descricao,
         referencia: f.referencia,
@@ -127,7 +136,6 @@ export const consultarFaturas = createServerFn({ method: "POST" })
       })),
     };
   });
-
 
 const pagamentoSchema = z.object({ fatura_id: z.string().uuid() });
 const geracaoSchema = z.object({
@@ -158,18 +166,27 @@ export type PixGerado = {
 export const gerarPixFatura = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => geracaoSchema.parse(data))
   .handler(async ({ data }): Promise<PixGerado> => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { sql, primeira } = await import("@/db");
     const { buscarTransacaoVigente, criarCobrancaPix } = await import(
       "@/lib/payment-router.server"
     );
 
-    const { data: fatura, error } = await supabaseAdmin
-      .from("faturas")
-      .select("id, cliente_id, descricao, valor_original, valor_desconto, status")
-      .eq("id", data.fatura_id)
-      .maybeSingle();
+    const fatura = primeira<{
+      id: string;
+      cliente_id: string;
+      descricao: string;
+      valor_original: number;
+      valor_desconto: number;
+      status: string;
+    }>(
+      await sql`
+        SELECT id, cliente_id, descricao, valor_original, valor_desconto, status::text
+        FROM faturas
+        WHERE id = ${data.fatura_id}
+      `,
+    );
 
-    if (error || !fatura) throw new Error("Fatura não encontrada.");
+    if (!fatura) throw new Error("Fatura não encontrada.");
     if (fatura.status === "paga") {
       return { valor: 0, copia_cola: "", txid: "", status: "paga", disponivel: false };
     }
@@ -182,7 +199,7 @@ export const gerarPixFatura = createServerFn({ method: "POST" })
         valor: 0,
         copia_cola: "",
         txid: "",
-        status: fatura.status as string,
+        status: fatura.status,
         disponivel: false,
         mensagem: "Esta fatura não possui um valor com desconto válido para pagamento.",
       };
@@ -192,21 +209,26 @@ export const gerarPixFatura = createServerFn({ method: "POST" })
     // Reaproveitamento só quando o painel permite E o cliente não pediu novo PIX.
     let transacao = null as Awaited<ReturnType<typeof criarCobrancaPix>>;
     if (!data.forcar) {
-      const { data: cfg } = await supabaseAdmin
-        .from("roteamento_config")
-        .select("novo_pix_por_acesso")
-        .eq("id", true)
-        .maybeSingle();
+      const cfg = primeira<{ novo_pix_por_acesso: boolean }>(
+        await sql`SELECT novo_pix_por_acesso FROM roteamento_config WHERE id = true`,
+      );
       if (cfg?.novo_pix_por_acesso === false) {
         transacao = await buscarTransacaoVigente(fatura.id, centavos);
       }
     }
 
-    const { data: cliente } = await supabaseAdmin
-      .from("clientes")
-      .select("nome, telefone, email, documento")
-      .eq("id", fatura.cliente_id)
-      .maybeSingle();
+    const cliente = primeira<{
+      nome: string;
+      telefone: string;
+      email: string | null;
+      documento: string | null;
+    }>(
+      await sql`
+        SELECT nome, telefone, email, documento
+        FROM clientes
+        WHERE id = ${fatura.cliente_id}
+      `,
+    );
 
     transacao ??= await criarCobrancaPix({
       faturaId: fatura.id,
@@ -226,56 +248,52 @@ export const gerarPixFatura = createServerFn({ method: "POST" })
         valor,
         copia_cola: "",
         txid: "",
-        status: fatura.status as string,
+        status: fatura.status,
         disponivel: false,
         mensagem: "Pagamento indisponível no momento. Tente novamente em alguns minutos.",
       };
     }
 
     // Mantém os campos legados da fatura em sincronia com a transação atual.
-    await supabaseAdmin
-      .from("faturas")
-      .update({
-        pix_txid: transacao.transacao_gateway_id,
-        pix_copia_cola: transacao.copia_cola,
-        pix_valor_centavos: centavos,
-      })
-      .eq("id", fatura.id);
+    await sql`
+      UPDATE faturas
+      SET pix_txid = ${transacao.transacao_gateway_id},
+          pix_copia_cola = ${transacao.copia_cola},
+          pix_valor_centavos = ${centavos},
+          updated_at = now()
+      WHERE id = ${fatura.id}
+    `;
 
-    const { data: pendente } = await supabaseAdmin
-      .from("pagamentos")
-      .select("id, valor")
-      .eq("fatura_id", fatura.id)
-      .eq("status", "pendente")
-      .limit(1)
-      .maybeSingle();
+    const pendente = primeira<{ id: string }>(
+      await sql`
+        SELECT id FROM pagamentos
+        WHERE fatura_id = ${fatura.id} AND status = 'pendente'
+        LIMIT 1
+      `,
+    );
 
     if (!pendente) {
-      await supabaseAdmin.from("pagamentos").insert({
-        fatura_id: fatura.id,
-        cliente_id: fatura.cliente_id,
-        valor,
-        metodo: "pix",
-        status: "pendente",
-        gateway: transacao.gateway_slug,
-        gateway_payment_id: transacao.transacao_gateway_id,
-      });
+      await sql`
+        INSERT INTO pagamentos (fatura_id, cliente_id, valor, metodo, status, gateway, gateway_payment_id)
+        VALUES (
+          ${fatura.id}, ${fatura.cliente_id}, ${valor}, 'pix', 'pendente',
+          ${transacao.gateway_slug}, ${transacao.transacao_gateway_id}
+        )
+      `;
     } else {
-      await supabaseAdmin
-        .from("pagamentos")
-        .update({
-          valor,
-          gateway: transacao.gateway_slug,
-          gateway_payment_id: transacao.transacao_gateway_id,
-        })
-        .eq("id", pendente.id);
+      await sql`
+        UPDATE pagamentos
+        SET valor = ${valor}, gateway = ${transacao.gateway_slug},
+            gateway_payment_id = ${transacao.transacao_gateway_id}, updated_at = now()
+        WHERE id = ${pendente.id}
+      `;
     }
 
     return {
       valor,
       copia_cola: transacao.copia_cola,
       txid: transacao.transacao_gateway_id ?? "",
-      status: transacao.status === "pago" ? "paga" : (fatura.status as string),
+      status: transacao.status === "pago" ? "paga" : fatura.status,
       disponivel: true,
       transacao_id: transacao.id,
       gateway: transacao.gateway_slug,
@@ -290,27 +308,35 @@ export const gerarPixFatura = createServerFn({ method: "POST" })
 export const consultarStatusFatura = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => pagamentoSchema.parse(data))
   .handler(async ({ data }): Promise<{ status: string }> => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { sql, primeira } = await import("@/db");
     const { statusNaGateway, confirmarPagamento } = await import("@/lib/payment-router.server");
 
-    const { data: fatura } = await supabaseAdmin
-      .from("faturas")
-      .select("id, status")
-      .eq("id", data.fatura_id)
-      .maybeSingle();
+    const fatura = primeira<{ id: string; status: string }>(
+      await sql`SELECT id, status::text FROM faturas WHERE id = ${data.fatura_id}`,
+    );
 
     if (!fatura) return { status: "em_aberto" };
     if (fatura.status === "paga") return { status: "paga" };
 
-    const { data: transacao } = await supabaseAdmin
-      .from("transacoes_pix")
-      .select(
-        "id, gateway_slug, transacao_gateway_id, valor_centavos, copia_cola, qrcode, status, expira_em",
-      )
-      .eq("fatura_id", fatura.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const transacao = primeira<{
+      id: string;
+      gateway_slug: string;
+      transacao_gateway_id: string | null;
+      valor_centavos: number;
+      copia_cola: string | null;
+      qrcode: string | null;
+      status: string;
+      expira_em: string | null;
+    }>(
+      await sql`
+        SELECT id, gateway_slug, transacao_gateway_id, valor_centavos, copia_cola,
+               qrcode, status, expira_em
+        FROM transacoes_pix
+        WHERE fatura_id = ${fatura.id}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+    );
 
     if (transacao) {
       if (transacao.status === "pago") return { status: "paga" };
@@ -321,9 +347,8 @@ export const consultarStatusFatura = createServerFn({ method: "POST" })
       }
     }
 
-    return { status: (fatura.status as string) ?? "em_aberto" };
+    return { status: fatura.status ?? "em_aberto" };
   });
-
 
 /**
  * A baixa do pagamento acontece EXCLUSIVAMENTE por confirmação do gateway:
@@ -331,5 +356,3 @@ export const consultarStatusFatura = createServerFn({ method: "POST" })
  * polling em consultarStatusFatura. Não existe confirmação manual pelo
  * visitante — isso permitiria marcar faturas como pagas sem pagamento real.
  */
-
-

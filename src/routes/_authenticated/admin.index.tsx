@@ -1,12 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
 import { FileText, Trash2, UserCheck, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
-import { limparAcessos, obterMetricasAcessos } from "@/lib/acessos.functions";
+import { contarClientes, limparAcessos, obterMetricasAcessos } from "@/lib/acessos.functions";
 import { formatarMoeda } from "@/lib/format";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
@@ -25,32 +23,16 @@ function Dashboard() {
 
   const { data: totalClientes, isLoading } = useQuery({
     queryKey: ["dashboard-clientes"],
-    queryFn: async () => {
-      const { count } = await supabase
-        .from("clientes")
-        .select("id", { count: "exact", head: true });
-      return count ?? 0;
-    },
+    queryFn: async () => (await contarClientes()).total,
+    refetchInterval: 30000,
   });
 
   const { data: metricas, isLoading: carregandoMetricas } = useQuery({
     queryKey: ["metricas-acessos"],
     queryFn: () => obterMetricasAcessos(),
+    // Sem realtime: o painel atualiza por polling a cada 30s.
     refetchInterval: 30000,
   });
-
-  // Atualização em tempo real conforme novos acessos chegam.
-  useEffect(() => {
-    const canal = supabase
-      .channel("acessos-dashboard")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "acessos" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["metricas-acessos"] });
-      })
-      .subscribe();
-    return () => {
-      supabase.removeChannel(canal);
-    };
-  }, [queryClient]);
 
   const limpar = useMutation({
     mutationFn: () => limparAcessos(),

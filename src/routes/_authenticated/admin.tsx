@@ -1,41 +1,15 @@
-import { createFileRoute, isRedirect, Link, Outlet, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, redirect, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { BarChart3, FileText, LogOut, QrCode, Receipt, ScrollText, Shuffle } from "lucide-react";
 
 import logo from "@/assets/logo-claro.png";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { logout, verificarSessao } from "@/lib/auth.functions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   beforeLoad: async () => {
-    // Falhas de rede ou sessão inválida não devem quebrar a tela:
-    // nesses casos limpamos a sessão e voltamos para o login.
-    try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError || !userData.user) throw redirect({ to: "/auth" });
-
-      const { data: papeis, error: erroPapel } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", userData.user.id)
-        .eq("role", "admin")
-        .maybeSingle();
-
-      if (erroPapel) throw redirect({ to: "/auth" });
-
-      if (!papeis) {
-        await supabase.auth.signOut();
-        throw redirect({ to: "/auth" });
-      }
-    } catch (erro) {
-      if (isRedirect(erro)) throw erro;
-      try {
-        await supabase.auth.signOut();
-      } catch {
-        /* ignora */
-      }
-      throw redirect({ to: "/auth" });
-    }
+    const { autenticado } = await verificarSessao();
+    if (!autenticado) throw redirect({ to: "/auth" });
   },
   component: LayoutAdmin,
   errorComponent: ErroAdmin,
@@ -79,7 +53,7 @@ function LayoutAdmin() {
   async function sair() {
     await queryClient.cancelQueries();
     queryClient.clear();
-    await supabase.auth.signOut();
+    await logout();
     navigate({ to: "/auth", replace: true });
   }
 

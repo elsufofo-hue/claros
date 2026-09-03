@@ -37,17 +37,33 @@ export const Route = createFileRoute("/api/public/faturas")({
           );
         }
 
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { sql, primeira } = await import("@/db");
 
-        const { data, error } = await supabaseAdmin
-          .from("faturas_por_telefone")
-          .select(
-            "telefone, nome, fatura_id, valor_em_aberto, valor_com_desconto, status, data_vencimento, pix_copia_e_cola, boleto_codigo, boleto_url, data_pagamento",
-          )
-          .eq("telefone", parsed.data.telefone)
-          .maybeSingle();
-
-        if (error) {
+        let data: {
+          telefone: string;
+          nome: string;
+          fatura_id: string;
+          valor_em_aberto: number;
+          valor_com_desconto: number;
+          status: string;
+          data_vencimento: string;
+          pix_copia_e_cola: string | null;
+          boleto_codigo: string | null;
+          boleto_url: string | null;
+          data_pagamento: string | null;
+        } | null;
+        try {
+          data = primeira(
+            await sql`
+              SELECT telefone, nome, fatura_id, valor_em_aberto, valor_com_desconto,
+                     status, data_vencimento, pix_copia_e_cola, boleto_codigo,
+                     boleto_url, data_pagamento
+              FROM faturas_por_telefone
+              WHERE telefone = ${parsed.data.telefone}
+              LIMIT 1
+            `,
+          );
+        } catch {
           return Response.json(
             { erro: "Não foi possível consultar no momento." },
             { status: 500, headers: cors },

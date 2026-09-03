@@ -23,8 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ImportarClientesDialog } from "@/components/importar-clientes";
-import { supabase } from "@/integrations/supabase/client";
 import { apagarTudo } from "@/lib/clientes.functions";
+import { alterarStatusFatura, editarFatura, listarFaturas } from "@/lib/faturas.functions";
 import { STATUS_FATURA, formatarData, formatarMoeda, formatarTelefone, somenteDigitos } from "@/lib/format";
 
 export const Route = createFileRoute("/_authenticated/admin/faturas")({
@@ -93,26 +93,14 @@ function PaginaFaturas() {
 
 
   const termo = busca.trim();
-  const digitos = somenteDigitos(termo);
 
   const { data, isLoading } = useQuery({
     queryKey: ["faturas-unificado", termo, pagina],
-    queryFn: async () => {
-      let q = supabase
-        .from("faturas")
-        .select("*, clientes!inner(nome, telefone)", { count: "exact" })
-        .order("vencimento", { ascending: false })
-        .range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
-
-      if (termo) {
-        const filtro = digitos.length >= 3 ? `telefone.ilike.%${digitos}%` : `nome.ilike.%${termo}%`;
-        q = q.or(filtro, { referencedTable: "clientes" });
-      }
-
-      const { data, error, count } = await q;
-      if (error) throw error;
-      return { linhas: (data ?? []) as unknown as Fatura[], total: count ?? 0 };
-    },
+    queryFn: () =>
+      listarFaturas({ data: { termo, pagina, porPagina: POR_PAGINA } }) as Promise<{
+        linhas: Fatura[];
+        total: number;
+      }>,
   });
 
   const faturas = data?.linhas ?? [];
@@ -122,23 +110,18 @@ function PaginaFaturas() {
     mutationFn: async () => {
       if (!editando) return;
       if (!form.vencimento) throw new Error("Informe a data de vencimento.");
-
-      const { error: erroCliente } = await supabase
-        .from("clientes")
-        .update({ nome: form.nome.trim() || form.telefone, telefone: somenteDigitos(form.telefone) })
-        .eq("id", editando.cliente_id);
-      if (erroCliente) throw new Error(erroCliente.message);
-
-      const { error } = await supabase
-        .from("faturas")
-        .update({
+      await editarFatura({
+        data: {
+          fatura_id: editando.id,
+          cliente_id: editando.cliente_id,
+          nome: form.nome.trim() || form.telefone,
+          telefone: somenteDigitos(form.telefone),
           valor_original: Number(form.valor_original) || 0,
           valor_desconto: Number(form.valor_desconto) || 0,
           vencimento: form.vencimento,
           status: form.status as StatusFatura,
-        })
-        .eq("id", editando.id);
-      if (error) throw new Error(error.message);
+        },
+      });
     },
     onSuccess: () => {
       toast.success("Registro atualizado.");
@@ -150,23 +133,8 @@ function PaginaFaturas() {
   });
 
   const alterarStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: StatusFatura }) => {
-      const { error } = await supabase.from("faturas").update({ status }).eq("id", id);
-      if (error) throw new Error(error.message);
-      if (status === "paga") {
-        const fatura = faturas.find((f) => f.id === id);
-        if (fatura) {
-          await supabase.from("pagamentos").insert({
-            fatura_id: fatura.id,
-            cliente_id: fatura.cliente_id,
-            valor: Number(fatura.valor_desconto) || Number(fatura.valor_original),
-            metodo: "manual",
-            status: "confirmado",
-            pago_em: new Date().toISOString(),
-          });
-        }
-      }
-    },
+    mutationFn: ({ id, status }: { id: string; status: StatusFatura }) =>
+      alterarStatusFatura({ data: { fatura_id: id, status } }),
     onSuccess: () => {
       toast.success("Status atualizado.");
       void queryClient.invalidateQueries({ queryKey: ["faturas-unificado"] });
@@ -177,12 +145,10 @@ function PaginaFaturas() {
 
   const gerarCobranca = useMutation({
     mutationFn: async (faturaId: string) => {
-      const { data: sessao } = await supabase.auth.getSession();
-      const token = sessao.session?.access_token;
-      if (!token) throw new Error("Sessão expirada. Entre novamente.");
       const resposta = await fetch("/api/public/cobranca", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ fatura_id: faturaId }),
       });
 

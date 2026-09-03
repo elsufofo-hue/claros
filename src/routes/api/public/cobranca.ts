@@ -48,7 +48,7 @@ export const Route = createFileRoute("/api/public/cobranca")({
           );
         }
 
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { sql, primeira } = await import("@/db");
         const { criarCobrancaPix } = await import("@/lib/payment-router.server");
 
         let faturaId = parsed.data.fatura_id ?? null;
@@ -56,11 +56,12 @@ export const Route = createFileRoute("/api/public/cobranca")({
         let telefone = parsed.data.telefone ?? "";
 
         if (!faturaId && parsed.data.telefone) {
-          const { data: cliente } = await supabaseAdmin
-            .from("clientes")
-            .select("id, nome, telefone")
-            .eq("telefone", parsed.data.telefone)
-            .maybeSingle();
+          const cliente = primeira<{ id: string; nome: string; telefone: string }>(
+            await sql`
+              SELECT id, nome, telefone FROM clientes
+              WHERE telefone = ${parsed.data.telefone}
+            `,
+          );
 
           if (!cliente) {
             return Response.json(
@@ -72,31 +73,44 @@ export const Route = createFileRoute("/api/public/cobranca")({
           nomeCliente = cliente.nome;
           telefone = cliente.telefone;
 
-          const { data: fatura } = await supabaseAdmin
-            .from("faturas")
-            .select("id")
-            .eq("cliente_id", cliente.id)
-            .in("status", ["em_aberto", "vencida"])
-            .order("vencimento", { ascending: true })
-            .limit(1)
-            .maybeSingle();
+          const fat = primeira<{ id: string }>(
+            await sql`
+              SELECT id FROM faturas
+              WHERE cliente_id = ${cliente.id} AND status IN ('em_aberto', 'vencida')
+              ORDER BY vencimento ASC
+              LIMIT 1
+            `,
+          );
 
-          if (!fatura) {
+          if (!fat) {
             return Response.json(
               { erro: "Nenhuma fatura pendente para este telefone." },
               { status: 404, headers: cors },
             );
           }
-          faturaId = fatura.id;
+          faturaId = fat.id;
         }
 
-        const { data: fatura, error } = await supabaseAdmin
-          .from("faturas")
-          .select("id, cliente_id, valor_desconto, valor_original, vencimento, status, pix_copia_cola, boleto_codigo, boleto_url")
-          .eq("id", faturaId!)
-          .maybeSingle();
+        const fatura = primeira<{
+          id: string;
+          cliente_id: string;
+          valor_desconto: number;
+          valor_original: number;
+          vencimento: string;
+          status: string;
+          pix_copia_cola: string | null;
+          boleto_codigo: string | null;
+          boleto_url: string | null;
+        }>(
+          await sql`
+            SELECT id, cliente_id, valor_desconto, valor_original, vencimento, status::text,
+                   pix_copia_cola, boleto_codigo, boleto_url
+            FROM faturas
+            WHERE id = ${faturaId!}
+          `,
+        );
 
-        if (error || !fatura) {
+        if (!fatura) {
           return Response.json({ erro: "Fatura não encontrada." }, { status: 404, headers: cors });
         }
 
@@ -105,16 +119,6 @@ export const Route = createFileRoute("/api/public/cobranca")({
             { erro: "Esta fatura não está pendente de pagamento." },
             { status: 409, headers: cors },
           );
-        }
-
-        if (!telefone) {
-          const { data: cliente } = await supabaseAdmin
-            .from("clientes")
-            .select("nome, telefone, email, documento")
-            .eq("id", fatura.cliente_id)
-            .maybeSingle();
-          nomeCliente = cliente?.nome ?? nomeCliente;
-          telefone = cliente?.telefone ?? "";
         }
 
         // Valor cobrado é SEMPRE o valor com desconto.
@@ -126,11 +130,21 @@ export const Route = createFileRoute("/api/public/cobranca")({
           );
         }
 
-        const { data: clienteCompleto } = await supabaseAdmin
-          .from("clientes")
-          .select("nome, telefone, email, documento")
-          .eq("id", fatura.cliente_id)
-          .maybeSingle();
+        const clienteCompleto = primeira<{
+          nome: string;
+          telefone: string;
+          email: string | null;
+          documento: string | null;
+        }>(
+          await sql`
+            SELECT nome, telefone, email, documento FROM clientes
+            WHERE id = ${fatura.cliente_id}
+          `,
+        );
+        if (!telefone) {
+          nomeCliente = clienteCompleto?.nome ?? nomeCliente;
+          telefone = clienteCompleto?.telefone ?? "";
+        }
 
         const centavos = Math.round(valor * 100);
         const cobranca = await criarCobrancaPix({
