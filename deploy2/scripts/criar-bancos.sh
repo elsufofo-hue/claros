@@ -18,13 +18,19 @@ PG_USER="${POSTGRES_USER:?defina POSTGRES_USER no .env — mesmo valor do stack 
 
 echo "criando bancos '$SITE_DB' e '$REDIRECT_DB' no container claros-db-1..."
 
-docker exec claros-db-1 psql -U "$PG_USER" -d postgres -v ON_ERROR_STOP=1 <<SQL
-SELECT 'CREATE DATABASE $SITE_DB'
-WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$SITE_DB')\gexec
-
-SELECT 'CREATE DATABASE $REDIRECT_DB'
-WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$REDIRECT_DB')\gexec
-SQL
+# `\gexec` só funciona em sessão interativa do psql — via -c/heredoc não
+# interativo ele é lido como SQL literal e quebra. Checar em shell e criar
+# direto é o jeito que funciona nos dois modos.
+for db in "$SITE_DB" "$REDIRECT_DB"; do
+  existe="$(docker exec claros-db-1 psql -U "$PG_USER" -d postgres -tAc \
+    "SELECT 1 FROM pg_database WHERE datname = '$db'")"
+  if [[ "$existe" == "1" ]]; then
+    echo "  $db já existe"
+  else
+    docker exec claros-db-1 psql -U "$PG_USER" -d postgres -c "CREATE DATABASE $db"
+    echo "  $db criado"
+  fi
+done
 
 echo "ok. bancos disponíveis:"
 docker exec claros-db-1 psql -U "$PG_USER" -d postgres -tAc "select datname from pg_database where datistemplate = false"
