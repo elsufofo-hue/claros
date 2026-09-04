@@ -101,6 +101,9 @@ services:
       TLS_EMAIL: ${TLS_EMAIL}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Blocos de stacks adicionais (ex.: ../deploy2/Caddyfile.snippet) — pasta
+      # do host, para poder trocar o conteúdo sem rebuild. Vazia por padrão.
+      - ./extra.d:/etc/caddy/extra.d:ro
       - caddy-data:/data
       - caddy-config:/config
     networks:

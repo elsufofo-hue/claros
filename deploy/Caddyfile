@@ -24,3 +24,9 @@
 		header_up X-Real-IP {remote_host}
 	}
 }
+
+# Stacks adicionais (ex.: deploy2/) entram por import, em arquivo separado —
+# nunca editar blocos de outro stack aqui diretamente. Ver deploy2/Caddyfile.snippet
+# e deploy2/README.md para como plugar. `import` de um glob que não bate em nada
+# é um no-op silencioso, então isto é seguro mesmo sem nenhum stack extra.
+import /etc/caddy/extra.d/*.caddy
