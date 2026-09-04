@@ -6,7 +6,7 @@
  *
  * Pode ser sobrescrito pela variável de ambiente PRODUTO_NOME.
  */
-export const PRODUTO_NOME_PADRAO = "Método Emagrecer Secreto";
+export const PRODUTO_NOME_PADRAO = "Ebook Método Emagrecer Secreto";
 
 export function nomeProdutoGateway(): string {
   const nome = (process.env["PRODUTO_NOME"] ?? "").trim();
