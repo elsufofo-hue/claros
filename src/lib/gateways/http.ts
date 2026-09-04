@@ -1,3 +1,5 @@
+import { fetchViaProxy, proxyDisponivel } from "./proxy-fetch";
+
 /**
  * `fetch` com timeout curto — usar em TODA chamada às APIs de gateway.
  *
@@ -22,4 +24,36 @@ export async function fetchComTimeout(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export type RespostaGateway = {
+  status: number;
+  ok: boolean;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+};
+
+/**
+ * `fetch` para chamadas de gateway de pagamento: sai por `GATEWAY_PROXY_URL`
+ * quando configurada (esconde o IP real da VPS do gateway — usado hoje pelo
+ * GG stack1, proxy dedicado em metodo.emagrecersecreto.com), senão cai para
+ * `fetchComTimeout` direto. Único ponto de decisão proxy-vs-direto — todo
+ * adapter de gateway deve chamar isto, nunca `fetch`/`fetchComTimeout` puro.
+ */
+export async function fetchGateway(
+  url: string,
+  init: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  timeoutMs = TIMEOUT_PADRAO_MS,
+): Promise<RespostaGateway> {
+  if (proxyDisponivel()) {
+    const r = await fetchViaProxy(url, init, timeoutMs);
+    return {
+      status: r.status,
+      ok: r.status >= 200 && r.status < 300,
+      text: async () => r.text(),
+      json: async () => r.json(),
+    };
+  }
+  const r = await fetchComTimeout(url, init, timeoutMs);
+  return { status: r.status, ok: r.ok, text: () => r.text(), json: () => r.json() };
 }

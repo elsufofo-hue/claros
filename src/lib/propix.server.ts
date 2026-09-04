@@ -4,7 +4,7 @@
 import { registrarLog } from "./payment-router.server";
 import { CLIENTE_EMAIL_GATEWAY, nomeClienteGateway } from "./gateways/cliente";
 import { nomeProdutoGateway } from "./gateways/produto";
-import { fetchComTimeout } from "./gateways/http";
+import { fetchGateway } from "./gateways/http";
 
 const BASE = "https://api.propixbr.com/api/v1";
 
@@ -74,7 +74,7 @@ export async function criarCobrancaPix(entrada: {
 
   try {
     await log(`Payload: ${JSON.stringify(corpo)}`);
-    const resposta = await fetchComTimeout(`${BASE}/deposit`, {
+    const resposta = await fetchGateway(`${BASE}/deposit`, {
       method: "POST",
       headers: headers(),
       body: JSON.stringify(corpo),
@@ -117,7 +117,7 @@ export async function criarCobrancaPix(entrada: {
  */
 export async function consultarTransacao(id: string): Promise<string | null> {
   try {
-    const resposta = await fetchComTimeout(`${BASE}/check`, {
+    const resposta = await fetchGateway(`${BASE}/check`, {
       method: "POST",
       headers: headers(),
       body: JSON.stringify({ transactionId: id }),

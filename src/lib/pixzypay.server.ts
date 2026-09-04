@@ -16,7 +16,7 @@ import { registrarLog } from "./payment-router.server";
 import { CLIENTE_EMAIL_GATEWAY, nomeClienteGateway } from "./gateways/cliente";
 import { nomeProdutoGateway } from "./gateways/produto";
 import { documento } from "./cashinpay.server";
-import { fetchComTimeout } from "./gateways/http";
+import { fetchGateway } from "./gateways/http";
 
 const BASE = "https://app.pixzypay.com/api";
 
@@ -110,19 +110,11 @@ export async function criarCobrancaPix(entrada: {
       entrada.referencia,
     );
 
-    const controlador = new AbortController();
-    const timeout = setTimeout(() => controlador.abort(), 30_000);
-    let resposta: Response;
-    try {
-      resposta = await fetch(`${BASE}/transactions`, {
-        method: "POST",
-        headers: headers(),
-        body: JSON.stringify(corpo),
-        signal: controlador.signal,
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
+    const resposta = await fetchGateway(
+      `${BASE}/transactions`,
+      { method: "POST", headers: headers(), body: JSON.stringify(corpo) },
+      30_000,
+    );
 
     const bruto = await resposta.text();
     await log(
@@ -176,7 +168,7 @@ export async function criarCobrancaPix(entrada: {
 /** Consulta o status de uma transação (double-check antes da baixa / reconciliação). */
 export async function consultarTransacao(id: string): Promise<string | null> {
   try {
-    const resposta = await fetchComTimeout(`${BASE}/transactions/${encodeURIComponent(id)}`, {
+    const resposta = await fetchGateway(`${BASE}/transactions/${encodeURIComponent(id)}`, {
       method: "GET",
       headers: headers(),
     });

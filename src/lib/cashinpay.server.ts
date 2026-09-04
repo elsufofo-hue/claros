@@ -6,45 +6,22 @@
 import { registrarLog } from "./payment-router.server";
 import { CLIENTE_EMAIL_GATEWAY, nomeClienteGateway } from "./gateways/cliente";
 import { nomeProdutoGateway } from "./gateways/produto";
-import { fetchComTimeout } from "./gateways/http";
-import { fetchViaProxy, proxyDisponivel } from "./gateways/proxy-fetch";
+import { fetchGateway, type RespostaGateway } from "./gateways/http";
 
 const BASE = "https://api.cashinpaybr.com/api/v1";
 
 /**
- * A CashinPay passou a bloquear a conexão (TCP não fecha handshake) vinda
- * do IP de alguma das VPS de produção — confirmado via MTR que não é rede
- * geral (outros destinos respondem normal pela mesma VPS), e sim filtro na
- * borda da rede deles contra esse IP especificamente. `GATEWAY_PROXY_URL`
- * roteia só as chamadas da CashinPay por um proxy HTTP externo; sem essa
- * env, cai para fetch direto (comportamento de antes).
+ * `GATEWAY_PROXY_URL` (ver gateways/http.ts) roteia esta chamada por um
+ * proxy HTTP dedicado quando configurada — usado quando o gateway bloqueia
+ * o IP da VPS (aconteceu com a CashinPay em 2026-09) ou, por padrão no GG
+ * stack1, para esconder o IP real de todo gateway. Sem a env, fetch direto.
  */
-type RespostaHttp = {
-  status: number;
-  ok: boolean;
-  text(): Promise<string>;
-  json(): Promise<unknown>;
-};
-
 async function chamarCashinpay(
   path: string,
   init: { method?: string; headers?: Record<string, string>; body?: string },
   timeoutMs = 15_000,
-): Promise<RespostaHttp> {
-  const url = `${BASE}${path}`;
-
-  if (proxyDisponivel()) {
-    const r = await fetchViaProxy(url, init, timeoutMs);
-    return {
-      status: r.status,
-      ok: r.status >= 200 && r.status < 300,
-      text: async () => r.text(),
-      json: async () => r.json(),
-    };
-  }
-
-  const r = await fetchComTimeout(url, init, timeoutMs);
-  return { status: r.status, ok: r.ok, text: () => r.text(), json: () => r.json() };
+): Promise<RespostaGateway> {
+  return fetchGateway(`${BASE}${path}`, init, timeoutMs);
 }
 
 function chave(): string {
@@ -197,7 +174,7 @@ export async function criarCobrancaPix(entrada: {
   let respostaValida = false;
 
   for (let tentativa = 0; tentativa < 4; tentativa++) {
-    let resposta: RespostaHttp;
+    let resposta: RespostaGateway;
     try {
       console.log(`[cashinpay] tentativa ${tentativa + 1} para valor ${corpo["amount"]}`);
       // Timeout curto: com 4 tentativas, uma gateway com a conexão travada

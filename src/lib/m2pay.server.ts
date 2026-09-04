@@ -10,7 +10,7 @@
 import { registrarLog } from "./payment-router.server";
 import { CLIENTE_EMAIL_GATEWAY, nomeClienteGateway } from "./gateways/cliente";
 import { nomeProdutoGateway } from "./gateways/produto";
-import { fetchComTimeout } from "./gateways/http";
+import { fetchGateway } from "./gateways/http";
 
 const BASE = "https://api.m2pay.pro/api";
 
@@ -99,19 +99,11 @@ export async function criarCobrancaPix(entrada: {
       })}`,
       entrada.referencia,
     );
-    const controlador = new AbortController();
-    const timeout = setTimeout(() => controlador.abort(), 30_000);
-    let resposta: Response;
-    try {
-      resposta = await fetch(`${BASE}/sales/create-transaction`, {
-        method: "POST",
-        headers: headers(),
-        body: JSON.stringify(corpo),
-        signal: controlador.signal,
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
+    const resposta = await fetchGateway(
+      `${BASE}/sales/create-transaction`,
+      { method: "POST", headers: headers(), body: JSON.stringify(corpo) },
+      30_000,
+    );
 
     const bruto = await resposta.text();
     await log(`create-transaction status=${resposta.status} resposta=${bruto}`, entrada.referencia, resposta.status);
@@ -150,7 +142,7 @@ export async function criarCobrancaPix(entrada: {
 /** Consulta o status de uma transação (fallback/reconciliação). */
 export async function consultarTransacao(id: string): Promise<string | null> {
   try {
-    const resposta = await fetchComTimeout(`${BASE}/sales/${encodeURIComponent(id)}/status`, {
+    const resposta = await fetchGateway(`${BASE}/sales/${encodeURIComponent(id)}/status`, {
       method: "GET",
       headers: headers(),
     });
