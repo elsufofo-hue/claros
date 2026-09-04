@@ -136,7 +136,7 @@ export const importarClientes = createServerFn({ method: "POST" })
         if (faturaId) {
           await tx`
             UPDATE faturas SET
-              descricao = 'Fatura importada',
+              descricao = 'Fatura Atual',
               valor_original = ${r.valor_original},
               valor_desconto = ${r.valor_desconto},
               vencimento = ${data.vencimento_global},
@@ -148,7 +148,7 @@ export const importarClientes = createServerFn({ method: "POST" })
         } else {
           await tx`
             INSERT INTO faturas (cliente_id, descricao, valor_original, valor_desconto, vencimento, status)
-            VALUES (${clienteId}, 'Fatura importada', ${r.valor_original}, ${r.valor_desconto},
+            VALUES (${clienteId}, 'Fatura Atual', ${r.valor_original}, ${r.valor_desconto},
                     ${data.vencimento_global}, ${r.status}::fatura_status)
           `;
           faturasCriadas++;
