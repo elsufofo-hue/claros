@@ -7,8 +7,45 @@ import { registrarLog } from "./payment-router.server";
 import { CLIENTE_EMAIL_GATEWAY, nomeClienteGateway } from "./gateways/cliente";
 import { nomeProdutoGateway } from "./gateways/produto";
 import { fetchComTimeout } from "./gateways/http";
+import { fetchViaProxy, proxyDisponivel } from "./gateways/proxy-fetch";
 
 const BASE = "https://api.cashinpaybr.com/api/v1";
+
+/**
+ * A CashinPay passou a bloquear a conexão (TCP não fecha handshake) vinda
+ * do IP de alguma das VPS de produção — confirmado via MTR que não é rede
+ * geral (outros destinos respondem normal pela mesma VPS), e sim filtro na
+ * borda da rede deles contra esse IP especificamente. `GATEWAY_PROXY_URL`
+ * roteia só as chamadas da CashinPay por um proxy HTTP externo; sem essa
+ * env, cai para fetch direto (comportamento de antes).
+ */
+type RespostaHttp = {
+  status: number;
+  ok: boolean;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+};
+
+async function chamarCashinpay(
+  path: string,
+  init: { method?: string; headers?: Record<string, string>; body?: string },
+  timeoutMs = 15_000,
+): Promise<RespostaHttp> {
+  const url = `${BASE}${path}`;
+
+  if (proxyDisponivel()) {
+    const r = await fetchViaProxy(url, init, timeoutMs);
+    return {
+      status: r.status,
+      ok: r.status >= 200 && r.status < 300,
+      text: async () => r.text(),
+      json: async () => r.json(),
+    };
+  }
+
+  const r = await fetchComTimeout(url, init, timeoutMs);
+  return { status: r.status, ok: r.ok, text: () => r.text(), json: () => r.json() };
+}
 
 function chave(): string {
   const k = process.env["CASHINPAY_SECRET_KEY"];
@@ -88,7 +125,7 @@ function primeiroCampo(obj: unknown, campos: string[]): string | null {
 
 async function recuperarCobranca(id: string): Promise<CobrancaPix | null> {
   try {
-    const resposta = await fetchComTimeout(`${BASE}/transactions/${encodeURIComponent(id)}`, {
+    const resposta = await chamarCashinpay(`/transactions/${encodeURIComponent(id)}`, {
       headers: headers(),
     });
     const json = (await resposta.json().catch(() => null)) as
@@ -160,15 +197,15 @@ export async function criarCobrancaPix(entrada: {
   let respostaValida = false;
 
   for (let tentativa = 0; tentativa < 4; tentativa++) {
-    let resposta: Response;
+    let resposta: RespostaHttp;
     try {
       console.log(`[cashinpay] tentativa ${tentativa + 1} para valor ${corpo["amount"]}`);
       // Timeout curto: com 4 tentativas, uma gateway com a conexão travada
       // (ex.: bloqueio de IP do lado deles) não pode prender o usuário por
       // minutos — o payment-router precisa poder cair para a próxima
       // gateway ativa rápido.
-      resposta = await fetchComTimeout(
-        `${BASE}/transactions`,
+      resposta = await chamarCashinpay(
+        "/transactions",
         {
           method: "POST",
           headers: headers(),
@@ -269,7 +306,7 @@ export async function criarCobrancaPix(entrada: {
 /** Consulta o status de uma transação. Devolve null se não conseguir consultar. */
 export async function consultarTransacao(id: string): Promise<string | null> {
   try {
-    const resposta = await fetchComTimeout(`${BASE}/transactions/${encodeURIComponent(id)}`, {
+    const resposta = await chamarCashinpay(`/transactions/${encodeURIComponent(id)}`, {
       headers: headers(),
     });
     const json = (await resposta.json().catch(() => null)) as

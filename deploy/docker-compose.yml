@@ -55,6 +55,8 @@ services:
       SITE_URL: https://${SITE_DOMAIN}
       # Gateways de pagamento — descomente/adicione os que usar
       CASHINPAY_SECRET_KEY: ${CASHINPAY_SECRET_KEY:-}
+      # Proxy de saída só para as chamadas à CashinPay — ver .env.example.
+      GATEWAY_PROXY_URL: ${GATEWAY_PROXY_URL:-}
       PROPIX_CLIENT_ID: ${PROPIX_CLIENT_ID:-}
       PROPIX_CLIENT_SECRET: ${PROPIX_CLIENT_SECRET:-}
       PIXZYPAY_TOKEN: ${PIXZYPAY_TOKEN:-}

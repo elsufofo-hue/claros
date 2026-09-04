@@ -22,7 +22,16 @@ Projeto Vite + React + TypeScript + Tailwind + TanStack Start. Originado no [Lov
 - `src/lib/payment-router.server.ts` escolhe a gateway por `roteamento_config.estrategia` (`prioridade` | `rodizio` | `fixa`) e **já faz failover**: se `adaptador.criarPix()` de uma gateway lança erro, tenta a próxima ativa (ordenadas por `gateways_config.prioridade` ASC), registrando cada falha em `pagamentos_log`. Cada gateway implementa o contrato `GatewayAdapter` (`src/lib/gateways/types.ts`), registrado em `src/lib/gateways/adapters.server.ts`.
 - **Toda chamada HTTP a uma API de gateway usa `fetchComTimeout` (`src/lib/gateways/http.ts`, default 15s)** — nunca `fetch` puro. Sem isso, uma gateway com a conexão travada (ex.: IP da VPS bloqueado do lado deles — já aconteceu com a CashinPay) prende o `fetch` por minutos e o fallback do router só reage depois que a atual desiste; com timeout curto, o fallback é útil de verdade (segundos, não minutos). Ao adicionar uma gateway nova ou mexer numa existente, usar `fetchComTimeout` em toda chamada de `criarPix`/`consultarStatus`.
 - Gateways cadastradas hoje: `cashinpay`, `propix`, `pixzypay`, `m2pay`, `nowbanks`, `pix-estatico` (contingência sem baixa automática). Adicionar uma nova: módulo `src/lib/<gateway>.server.ts` + adaptador em `adapters.server.ts` + linha em `gateways_config` (seed via migration) + opção no `<Select>` de `src/routes/_authenticated/admin.gateways.tsx`.
-- Diagnosticar "PIX não gera / fica carregando": primeiro `docker compose logs site | grep -i <gateway>` — se for `Unable to connect`/timeout, é conectividade da VPS até o host da gateway (testar com `curl -m 10 https://<api-da-gateway>` no host da VPS, e comparar com outro domínio de controle tipo `https://www.google.com` para isolar "rede da VPS" vs. "essa gateway específica bloqueando o IP"), não bug do código.
+- Diagnosticar "PIX não gera / fica carregando": primeiro `docker compose logs site | grep -i <gateway>` — se for `Unable to connect`/timeout, é conectividade da VPS até o host da gateway (testar com `curl -m 10 https://<api-da-gateway>` no host da VPS, e comparar com outro domínio de controle tipo `https://www.google.com` para isolar "rede da VPS" vs. "essa gateway específica bloqueando o IP"), não bug do código. Confirmar com MTR (`mtr -T -P 443 -n -c 3 <ip>`) antes de concluir bloqueio — rota íntegra até o penúltimo hop e 100% de perda só no último é a assinatura de firewall na borda do destino, não instabilidade genérica de trânsito.
+
+### Proxy de saída (só CashinPay hoje)
+
+Incidente 2026-09: a CashinPay passou a bloquear o IP da VPS GG (`45.134.174.96`) — TCP SYN nem respondido, confirmado por MTR que não era rede geral (outros gateways respondiam normal pela mesma VPS). O suporte deles não confirmou causa. Mitigação: `GATEWAY_PROXY_URL` no `.env` do stack roteia **só** as chamadas da CashinPay por um proxy HTTP externo (Squid, VPS DigitalOcean `137.184.134.152`, sem o mesmo bloqueio).
+
+- `src/lib/gateways/proxy-fetch.ts` + `proxy-fetch-worker.ts`: o Bun **não respeita** `ProxyAgent`/`dispatcher` do `undici` no `fetch()` — testado e confirmado (IP de saída não muda). A única forma que funciona é `HTTPS_PROXY` como env var **do processo**, setada antes dele subir — por isso a chamada roda num subprocesso `Bun.spawn` dedicado (`fetchViaProxy`), com `HTTPS_PROXY` só no `env` daquele spawn. Isola o proxy da CashinPay sem afetar o `fetch` do processo principal (os outros gateways continuam diretos).
+- `cashinpay.server.ts` decide em `chamarCashinpay()`: se `GATEWAY_PROXY_URL` setada, usa `fetchViaProxy`; senão, `fetchComTimeout` direto (comportamento de antes, sem regressão).
+- Sem `GATEWAY_PROXY_URL` no ambiente, nada muda — é opt-in por stack. Formato: `http://usuario:senha@host:porta`.
+- Se outra gateway sofrer o mesmo tipo de bloqueio no futuro, o padrão é genérico o bastante pra reaproveitar (`proxy-fetch.ts` não é específico da CashinPay) — só replicar o `chamarCashinpay()`-equivalente no adapter novo.
 
 ## Anti-bot / anti-scraper (defensivo)
 
@@ -98,8 +107,8 @@ Roda **dois stacks isolados** (`deploy/` + `deploy2/`), compartilhando só o pro
 | Redirect | `fatura-claro.com` | `faturaclarofacil.com` |
 | Bancos | `claros` / `redirect` | `claros2` / `redirect2` |
 | Containers | `claros-site-1`, `claros-redirect-1` | `claros2-site2-1`, `claros2-redirect2-1` |
-| CashinPay | chave original | `sk_live_11bc78c2...` |
-| PixzyPay | configurado (desativado) | — |
+| CashinPay | **desativada** (bloqueio de IP, ver "Proxy de saída") | `sk_live_11bc78c2...` |
+| PixzyPay | **ativa, prioridade 1** (`PIXZYPAY_TOKEN` configurado) | configurado, desativado |
 
 Compartilhado entre os dois: `claros-db-1` (um Postgres, bancos separados — zero cruzamento de dados) e `claros-caddy-1` (roteia por domínio; as rotas do stack 2 entram via `import /etc/caddy/extra.d/*.caddy`, arquivo gerado a partir de `deploy2/Caddyfile.snippet`, para nunca editar o `Caddyfile` do stack 1 diretamente). Ver `deploy2/README.md` para o desenho completo e como plugar/desplugar um stack extra sem afetar o outro.
 
@@ -114,6 +123,15 @@ Um stack só (`deploy/`), réplica do padrão do GG.
 | Bancos | `claros` / `redirect` |
 | CashinPay | não configurada |
 | PixzyPay | configurado (desativado) |
+
+### Proxy — `137.184.134.152` (DigitalOcean, sem apelido próprio)
+
+VPS mínima (1 vCPU / 512MB) rodando **Squid** — proxy de saída autenticado, usado só pela CashinPay (ver seção "Gateways de pagamento" acima). Provedor diferente de propósito (não vsys.host), pra não herdar a mesma faixa de IP/ASN bloqueada.
+
+- Firewall (`ufw`) só libera a porta `3128` para os IPs do GG e do CC — qualquer outra origem é recusada mesmo com a senha certa.
+- Credenciais em `GATEWAY_PROXY_URL` (formato `http://usuario:senha@137.184.134.152:3128`) no `.env` de cada stack — usuário `claros`, senha gerada com `openssl rand -hex 20`.
+- Config em `/etc/squid/squid.conf` (auth básica via `/etc/squid/passwd`), sem cache (`cache deny all` — é proxy de trânsito).
+- Se precisar adicionar mais uma VPS de origem no futuro: `ufw allow from <IP> to any port 3128 proto tcp`.
 
 ### Comum aos dois
 
