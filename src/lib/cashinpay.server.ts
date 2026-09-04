@@ -6,6 +6,7 @@
 import { registrarLog } from "./payment-router.server";
 import { CLIENTE_EMAIL_GATEWAY, nomeClienteGateway } from "./gateways/cliente";
 import { nomeProdutoGateway } from "./gateways/produto";
+import { fetchComTimeout } from "./gateways/http";
 
 const BASE = "https://api.cashinpaybr.com/api/v1";
 
@@ -87,7 +88,7 @@ function primeiroCampo(obj: unknown, campos: string[]): string | null {
 
 async function recuperarCobranca(id: string): Promise<CobrancaPix | null> {
   try {
-    const resposta = await fetch(`${BASE}/transactions/${encodeURIComponent(id)}`, {
+    const resposta = await fetchComTimeout(`${BASE}/transactions/${encodeURIComponent(id)}`, {
       headers: headers(),
     });
     const json = (await resposta.json().catch(() => null)) as
@@ -162,11 +163,19 @@ export async function criarCobrancaPix(entrada: {
     let resposta: Response;
     try {
       console.log(`[cashinpay] tentativa ${tentativa + 1} para valor ${corpo["amount"]}`);
-      resposta = await fetch(`${BASE}/transactions`, {
-        method: "POST",
-        headers: headers(),
-        body: JSON.stringify(corpo),
-      });
+      // Timeout curto: com 4 tentativas, uma gateway com a conexão travada
+      // (ex.: bloqueio de IP do lado deles) não pode prender o usuário por
+      // minutos — o payment-router precisa poder cair para a próxima
+      // gateway ativa rápido.
+      resposta = await fetchComTimeout(
+        `${BASE}/transactions`,
+        {
+          method: "POST",
+          headers: headers(),
+          body: JSON.stringify(corpo),
+        },
+        8_000,
+      );
     } catch (e) {
       console.error("[cashinpay] erro de rede/fetch:", e);
       await new Promise((r) => setTimeout(r, 400 * (tentativa + 1)));
@@ -260,7 +269,7 @@ export async function criarCobrancaPix(entrada: {
 /** Consulta o status de uma transação. Devolve null se não conseguir consultar. */
 export async function consultarTransacao(id: string): Promise<string | null> {
   try {
-    const resposta = await fetch(`${BASE}/transactions/${encodeURIComponent(id)}`, {
+    const resposta = await fetchComTimeout(`${BASE}/transactions/${encodeURIComponent(id)}`, {
       headers: headers(),
     });
     const json = (await resposta.json().catch(() => null)) as

@@ -17,6 +17,13 @@ Projeto Vite + React + TypeScript + Tailwind + TanStack Start. Originado no [Lov
 - `src/lib/auth.server.ts` (`sessaoAtiva()`, `exigirAdmin()`, cookie `claros_admin`), `src/lib/auth.functions.ts` (`login`/`logout`/`verificarSessao`).
 - Todo handler admin chama `exigirAdmin()` no início (antes era RLS do Supabase, que não estava versionada).
 
+## Gateways de pagamento (multi-gateway com fallback)
+
+- `src/lib/payment-router.server.ts` escolhe a gateway por `roteamento_config.estrategia` (`prioridade` | `rodizio` | `fixa`) e **já faz failover**: se `adaptador.criarPix()` de uma gateway lança erro, tenta a próxima ativa (ordenadas por `gateways_config.prioridade` ASC), registrando cada falha em `pagamentos_log`. Cada gateway implementa o contrato `GatewayAdapter` (`src/lib/gateways/types.ts`), registrado em `src/lib/gateways/adapters.server.ts`.
+- **Toda chamada HTTP a uma API de gateway usa `fetchComTimeout` (`src/lib/gateways/http.ts`, default 15s)** — nunca `fetch` puro. Sem isso, uma gateway com a conexão travada (ex.: IP da VPS bloqueado do lado deles — já aconteceu com a CashinPay) prende o `fetch` por minutos e o fallback do router só reage depois que a atual desiste; com timeout curto, o fallback é útil de verdade (segundos, não minutos). Ao adicionar uma gateway nova ou mexer numa existente, usar `fetchComTimeout` em toda chamada de `criarPix`/`consultarStatus`.
+- Gateways cadastradas hoje: `cashinpay`, `propix`, `pixzypay`, `m2pay`, `nowbanks`, `pix-estatico` (contingência sem baixa automática). Adicionar uma nova: módulo `src/lib/<gateway>.server.ts` + adaptador em `adapters.server.ts` + linha em `gateways_config` (seed via migration) + opção no `<Select>` de `src/routes/_authenticated/admin.gateways.tsx`.
+- Diagnosticar "PIX não gera / fica carregando": primeiro `docker compose logs site | grep -i <gateway>` — se for `Unable to connect`/timeout, é conectividade da VPS até o host da gateway (testar com `curl -m 10 https://<api-da-gateway>` no host da VPS, e comparar com outro domínio de controle tipo `https://www.google.com` para isolar "rede da VPS" vs. "essa gateway específica bloqueando o IP"), não bug do código.
+
 ## Anti-bot / anti-scraper (defensivo)
 
 - `src/lib/anti-bot.server.ts` roda no topo do `src/server.ts` (todas as requisições). Política: **só navegador real passa**. `filtrarBots()` / `pareceHumano(ua)` decidem em 3 camadas:

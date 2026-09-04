@@ -10,6 +10,7 @@
 import { registrarLog } from "./payment-router.server";
 import { CLIENTE_EMAIL_GATEWAY, nomeClienteGateway } from "./gateways/cliente";
 import { nomeProdutoGateway } from "./gateways/produto";
+import { fetchComTimeout } from "./gateways/http";
 
 const BASE = "https://api.m2pay.pro/api";
 
@@ -149,7 +150,7 @@ export async function criarCobrancaPix(entrada: {
 /** Consulta o status de uma transação (fallback/reconciliação). */
 export async function consultarTransacao(id: string): Promise<string | null> {
   try {
-    const resposta = await fetch(`${BASE}/sales/${encodeURIComponent(id)}/status`, {
+    const resposta = await fetchComTimeout(`${BASE}/sales/${encodeURIComponent(id)}/status`, {
       method: "GET",
       headers: headers(),
     });

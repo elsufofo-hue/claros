@@ -10,6 +10,7 @@
  */
 import { registrarLog } from "./payment-router.server";
 import { nomeClienteGateway } from "./gateways/cliente";
+import { fetchComTimeout } from "./gateways/http";
 
 const BASE = "https://api.nowbanks.com.br/v1";
 
@@ -51,7 +52,7 @@ export async function obterToken(): Promise<string> {
     throw new Error("Credenciais NowBanks não configuradas.");
   }
 
-  const resposta = await fetch(`${BASE}/auth/login`, {
+  const resposta = await fetchComTimeout(`${BASE}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
@@ -80,7 +81,7 @@ async function autenticado(
   tentarNovamente = true,
 ): Promise<Response> {
   const token = await obterToken();
-  const resposta = await fetch(`${BASE}${caminho}`, {
+  const resposta = await fetchComTimeout(`${BASE}${caminho}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
