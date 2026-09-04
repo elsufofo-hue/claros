@@ -5,16 +5,53 @@
  * com a CashinPay em 2026-09 — TCP SYN nem respondido, confirmado via MTR
  * que não é rota/rede geral, e sim filtro na borda do destino) mas não faz
  * sentido rotear TODO o tráfego de saída por um proxy só por causa de uma
- * gateway. Ver `proxy-fetch-worker.ts` para o porquê do subprocesso (o Bun
- * não respeita ProxyAgent/dispatcher do undici no fetch principal).
+ * gateway.
  *
- * Configuração: GATEWAY_PROXY_URL no ambiente, formato
- * `http://usuario:senha@host:porta`. Sem essa env, `proxyDisponivel()`
- * retorna false e o chamador deve cair para fetch direto.
+ * Por que subprocesso, e por que o worker é uma STRING embutida (não um
+ * arquivo `.ts` separado importado por caminho):
+ *  1. O Bun não respeita `ProxyAgent`/`dispatcher` do `undici` no `fetch()`
+ *     — testado e confirmado (IP de saída não mudava com o dispatcher
+ *     setado). A única forma que funciona de verdade é `HTTPS_PROXY` como
+ *     env var do PROCESSO, lida antes dele subir — daí rodar a chamada
+ *     num `Bun.spawn` próprio, com a env só naquele spawn.
+ *  2. Um `proxy-fetch-worker.ts` como arquivo separado funciona em dev,
+ *     mas o build de produção (Vite/Nitro) bundla tudo em `.mjs` com hash
+ *     no nome e NÃO copia o `.ts` original pro `.output` — o spawn
+ *     `bun run <caminho-do-arquivo>` falha em produção com "Module not
+ *     found" (aconteceu de verdade: CashinPay caiu 4x em produção com
+ *     esse erro antes de virar string embutida). Uma string sobrevive a
+ *     qualquer bundler porque não depende de resolução de caminho — ela
+ *     é dado, não um import.
  */
-import { fileURLToPath } from "node:url";
 
-const WORKER_PATH = fileURLToPath(new URL("./proxy-fetch-worker.ts", import.meta.url));
+const WORKER_SRC = `
+const bruto = await new Response(Bun.stdin).text();
+const pedido = JSON.parse(bruto);
+const controlador = new AbortController();
+const timeout = setTimeout(() => controlador.abort(), pedido.timeoutMs);
+try {
+  const resposta = await fetch(pedido.url, {
+    method: pedido.init.method,
+    headers: pedido.init.headers,
+    body: pedido.init.body,
+    signal: controlador.signal,
+  });
+  const corpo = await resposta.arrayBuffer();
+  const headers = {};
+  resposta.headers.forEach((v, k) => { headers[k] = v; });
+  process.stdout.write(JSON.stringify({
+    status: resposta.status,
+    headers,
+    bodyBase64: Buffer.from(corpo).toString("base64"),
+  }));
+  process.exit(0);
+} catch (erro) {
+  process.stderr.write(erro instanceof Error ? erro.message : String(erro));
+  process.exit(1);
+} finally {
+  clearTimeout(timeout);
+}
+`;
 
 export function proxyDisponivel(): boolean {
   return Boolean(process.env["GATEWAY_PROXY_URL"]);
@@ -42,7 +79,7 @@ export async function fetchViaProxy(
 
   const pedido = JSON.stringify({ url, init, timeoutMs });
 
-  const proc = Bun.spawn(["bun", "run", WORKER_PATH], {
+  const proc = Bun.spawn(["bun", "-e", WORKER_SRC], {
     env: { ...process.env, HTTPS_PROXY: proxyUrl, HTTP_PROXY: proxyUrl },
     stdin: "pipe",
     stdout: "pipe",
