@@ -77,6 +77,45 @@ Variáveis necessárias (o host injeta): `DATABASE_URL`, `ADMIN_PASSWORD`, `SESS
 - **Timeweb Cloud:** provisionar um Postgres (cluster gerenciado ou container) **antes do primeiro deploy** e colar a connection string em `DATABASE_URL` — sem banco, o entrypoint aborta (`set -e`) e o container fica em crash-loop. Detalhes em `docs/deploy-timeweb.md`.
 - **Local:** `docker compose up --build` (lê `.env`; `.env*` fica fora da imagem via `.dockerignore`).
 
+## VPS em produção
+
+Duas VPS Ubuntu 24.04 (vsys.host), providas com `deploy/scripts/bootstrap-vps.sh`. Apelidos usados no dia a dia — **GG** e **CC**:
+
+### GG — `45.134.174.96`
+
+Roda **dois stacks isolados** (`deploy/` + `deploy2/`), compartilhando só o processo Postgres, o Caddy e a máquina.
+
+| | Stack 1 (`deploy/`) | Stack 2 (`deploy2/`) |
+|---|---|---|
+| Site | `portal.faturaclaros.com` | `portalfaturaclaro.com` |
+| Redirect | `fatura-claro.com` | `faturaclarofacil.com` |
+| Bancos | `claros` / `redirect` | `claros2` / `redirect2` |
+| Containers | `claros-site-1`, `claros-redirect-1` | `claros2-site2-1`, `claros2-redirect2-1` |
+| CashinPay | chave original | `sk_live_11bc78c2...` |
+| PixzyPay | configurado (desativado) | — |
+
+Compartilhado entre os dois: `claros-db-1` (um Postgres, bancos separados — zero cruzamento de dados) e `claros-caddy-1` (roteia por domínio; as rotas do stack 2 entram via `import /etc/caddy/extra.d/*.caddy`, arquivo gerado a partir de `deploy2/Caddyfile.snippet`, para nunca editar o `Caddyfile` do stack 1 diretamente). Ver `deploy2/README.md` para o desenho completo e como plugar/desplugar um stack extra sem afetar o outro.
+
+### CC — `176.97.114.233`
+
+Um stack só (`deploy/`), réplica do padrão do GG.
+
+| | |
+|---|---|
+| Site | `minha-faturaclaro.com` |
+| Redirect | `minhafaturaclaro.com` |
+| Bancos | `claros` / `redirect` |
+| CashinPay | não configurada |
+| PixzyPay | configurado (desativado) |
+
+### Comum aos dois
+
+- SSH: `ssh root@<IP>` (chave `~/.ssh/id_ed25519` do operador). Deploy key própria por VPS cadastrada em Settings → Deploy keys do repo (`claros-deploy-vps` no GG, `claros-deploy-vps2` no CC), read-only.
+- `ADMIN_PASSWORD` do painel `/auth`: mesma em todos os stacks hoje (`seed39646608`) — trocar por stack se precisar de isolamento de acesso.
+- Nameservers dos domínios: `ns1/ns2.dyna-ns.net` (Dynadot) — mas **cuidado**: o registro DNS que importa é a zona de verdade (checar propagação com `dig @8.8.8.8`, não confiar no atalho "Dynadot DNS: IP" da listagem geral de domínios, que é só forwarding do registrador e não edita a zona).
+- Runbook de contingência (DNS caiu, banco caiu, VPS inteira caiu, container caiu, gateway caiu) + scripts de backup/restore/healthcheck/bootstrap: `deploy/scripts/` e o artifact publicado (pedir o link se precisar, ou gerar de novo com `/artifacts`).
+- Kill switches do anti-bot por `.env` de cada stack: `ANTI_BOT_OFF=1` (desliga tudo), `ANTI_BOT_NO_ALLOWLIST=1` (allowlist de bots legítimos desligada — modo de teste "só navegador passa, nem Googlebot/WhatsApp passam"). Estado hoje: **ligado** em `deploy/.env` do GG (stack 1) e do CC; **não setado** (allowlist normal) em `deploy2/.env` do GG (stack 2). Conferir com `grep ANTI_BOT .env` antes de assumir — muda conforme pedido de teste.
+
 ## Não reescrever histórico publicado
 
 Conforme `AGENTS.md`: sem force-push, rebase, amend ou squash de commits já enviados.
