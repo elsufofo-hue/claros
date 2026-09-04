@@ -8,6 +8,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import type { GatewayRegistro } from "@/lib/gateways/types";
+import { normalizarStatusNaoPago } from "@/lib/gateways/status";
 
 export const Route = createFileRoute("/api/public/webhooks/$slug")({
   server: {
@@ -72,8 +73,12 @@ export const Route = createFileRoute("/api/public/webhooks/$slug")({
           }
           await confirmarPagamento(transacao.id);
         } else if (leitura.status) {
+          // Normaliza pro vocabulário interno (pendente/cancelada/expirada/falhou) —
+          // cada gateway manda um valor diferente pro mesmo estado (PixzyPay
+          // "pending" em inglês, ProPix "APROVADO" em maiúsculas, etc.); gravar
+          // cru deixava a coluna com valores inconsistentes entre gateways.
           await sql`
-            UPDATE transacoes_pix SET status = ${leitura.status.toLowerCase()}, updated_at = now()
+            UPDATE transacoes_pix SET status = ${normalizarStatusNaoPago(leitura.status)}, updated_at = now()
             WHERE id = ${transacao.id}
           `;
         }

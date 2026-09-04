@@ -45,10 +45,24 @@ export const Route = createFileRoute("/_authenticated/admin/transacoes")({
   component: PaginaTransacoes,
 });
 
+// Vocabulário interno normalizado em src/lib/gateways/status.ts — todo status
+// gravado hoje é um destes 5. Cobre também os antigos crus (pending, etc.)
+// como defesa: se algum valor não bater, cai no "secondary" padrão do Badge.
 const CORES: Record<string, string> = {
   pago: "bg-emerald-600 text-white hover:bg-emerald-600",
   pendente: "bg-amber-500 text-white hover:bg-amber-500",
+  cancelada: "bg-muted text-muted-foreground",
   expirada: "bg-muted text-muted-foreground",
+  falhou: "bg-destructive text-destructive-foreground hover:bg-destructive",
+};
+
+const RÓTULOS: Record<string, string> = {
+  pago: "pago",
+  pendente: "pendente",
+  cancelada: "cancelada",
+  expirada: "expirada",
+  falhou: "falhou",
+  substituida: "substituída",
 };
 
 function dataHora(valor: string | null): string {
@@ -93,6 +107,7 @@ function PaginaTransacoes() {
             <SelectItem value="pago">Pagos</SelectItem>
             <SelectItem value="expirada">Expirados</SelectItem>
             <SelectItem value="falhou">Recusados</SelectItem>
+            <SelectItem value="cancelada">Cancelados</SelectItem>
           </SelectContent>
         </Select>
         </div>
@@ -135,7 +150,7 @@ function PaginaTransacoes() {
                     <TableCell>{formatarMoeda(t.valor_centavos / 100)}</TableCell>
                     <TableCell>
                       <Badge className={CORES[t.status] ?? ""} variant={CORES[t.status] ? "default" : "secondary"}>
-                        {t.status}
+                        {RÓTULOS[t.status] ?? t.status}
                       </Badge>
                     </TableCell>
                     <TableCell>{t.tentativas}</TableCell>
