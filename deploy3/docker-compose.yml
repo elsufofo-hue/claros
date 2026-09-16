@@ -1,0 +1,77 @@
+# Terceiro stack claros, isolado, rodando NA MESMA VPS do stack em ../deploy/.
+#
+#   site3      → claros (banco `claros3`)
+#   redirect3  → serviço de redirect (banco `redirect3`)
+#
+# Isolamento: bancos próprios (claros3/redirect3), containers próprios,
+# variáveis de ambiente próprias (.env deste diretório, independente do
+# ../deploy/.env). O que É compartilhado com o stack original, de propósito:
+#   - o mesmo processo Postgres (container `db` do stack `claros`) — só os
+#     bancos são diferentes, então zero cruzamento de dados/queries;
+#   - o mesmo Caddy (container `caddy` do stack `claros`) — ele já roteia por
+#     domínio, então os blocos novos entram direto no Caddyfile do outro stack.
+#
+# Por isso este compose NÃO declara `db`, `caddy`, nem publica portas: ele se
+# conecta à rede externa `claros_interna`, criada pelo stack original.
+#
+# Pré-requisito: o stack em ../deploy/ já estar de pé (dá o Postgres e o Caddy).
+#
+# Uso:
+#   cd deploy2
+#   cp .env.example .env      # editar com valores próprios
+#   ./scripts/criar-bancos.sh # cria claros3 + redirect3 no Postgres existente
+#   docker compose up -d --build
+#   # depois: adicionar os blocos de portalfaturaclaro.com e faturaclarofacil.com
+#   # ao Caddyfile em ../deploy/Caddyfile e recarregar o caddy.
+
+name: claros3
+
+services:
+  site3:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${SITE_DB:-claros3}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      SESSION_SECRET: ${SESSION_SECRET}
+      SITE_URL: https://${SITE_DOMAIN}
+      CASHINPAY_SECRET_KEY: ${CASHINPAY_SECRET_KEY:-}
+      CASHINPAY_WEBHOOK_SECRET: ${CASHINPAY_WEBHOOK_SECRET:-}
+      GATEWAY_PROXY_URL: ${GATEWAY_PROXY_URL:-}
+      PROPIX_CLIENT_ID: ${PROPIX_CLIENT_ID:-}
+      PROPIX_CLIENT_SECRET: ${PROPIX_CLIENT_SECRET:-}
+      PIXZYPAY_TOKEN: ${PIXZYPAY_TOKEN:-}
+      M2PAY_API_KEY: ${M2PAY_API_KEY:-}
+      NOWBANKS_CLIENT_ID: ${NOWBANKS_CLIENT_ID:-}
+      NOWBANKS_CLIENT_SECRET: ${NOWBANKS_CLIENT_SECRET:-}
+      PIX_CHAVE: ${PIX_CHAVE:-}
+      ANTI_BOT_OFF: ${ANTI_BOT_OFF:-}
+      ANTI_BOT_NO_ALLOWLIST: ${ANTI_BOT_NO_ALLOWLIST:-}
+    networks:
+      - interna
+
+  redirect3:
+    build:
+      context: ..
+      dockerfile: apps/redirect/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8080
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${REDIRECT_DB:-redirect3}
+      REDIRECT_ADMIN_TOKEN: ${REDIRECT_ADMIN_TOKEN}
+      REDIRECT_ANTI_BOT_OFF: ${REDIRECT_ANTI_BOT_OFF:-}
+      REDIRECT_ANTI_BOT_NO_ALLOWLIST: ${REDIRECT_ANTI_BOT_NO_ALLOWLIST:-}
+    networks:
+      - interna
+
+networks:
+  interna:
+    name: claros_interna
+    external: true

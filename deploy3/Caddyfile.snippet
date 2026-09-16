@@ -1,0 +1,31 @@
+# Blocos de rota do stack 3 (site2/redirect2). Isto NÃO é lido diretamente —
+# copie para ../deploy/extra.d/claros3.caddy com os domínios reais substituídos
+# (Caddy neste setup usa env vars só no Caddyfile principal; aqui os domínios
+# vão literais porque o container caddy não tem SITE2_DOMAIN/REDIRECT2_DOMAIN
+# na env — troque os placeholders abaixo antes de copiar).
+#
+# Instalar:
+#   sed -e 's/__SITE3_DOMAIN__/portalfaturaclaro.com/' \
+#       -e 's/__REDIRECT3_DOMAIN__/faturaclarofacil.com/' \
+#       deploy3/Caddyfile.snippet > deploy/extra.d/claros3.caddy
+#   cd deploy && docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+#
+# Remover (desativar o stack 3 do proxy sem tocar no stack 1):
+#   rm deploy/extra.d/claros3.caddy
+#   cd deploy && docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+
+__SITE3_DOMAIN__ {
+	encode zstd gzip
+	reverse_proxy site3:3000 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+__REDIRECT3_DOMAIN__ {
+	encode zstd gzip
+	reverse_proxy redirect3:8080 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+}
