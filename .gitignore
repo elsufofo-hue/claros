@@ -21,6 +21,12 @@ dist-ssr
 .env.*
 !.env.example
 
+# Segredos de infra (senhas de proxy, credenciais de VPS) — nunca commitar
+infra-secrets.md
+deploy/.env
+deploy2/.env
+deploy3/.env
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars

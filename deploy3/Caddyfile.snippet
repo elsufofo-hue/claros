@@ -1,12 +1,12 @@
-# Blocos de rota do stack 3 (site2/redirect2). Isto NÃO é lido diretamente —
+# Blocos de rota do stack 3 (site3/redirect3). Isto NÃO é lido diretamente —
 # copie para ../deploy/extra.d/claros3.caddy com os domínios reais substituídos
 # (Caddy neste setup usa env vars só no Caddyfile principal; aqui os domínios
-# vão literais porque o container caddy não tem SITE2_DOMAIN/REDIRECT2_DOMAIN
+# vão literais porque o container caddy não tem SITE3_DOMAIN/REDIRECT3_DOMAIN
 # na env — troque os placeholders abaixo antes de copiar).
 #
 # Instalar:
-#   sed -e 's/__SITE3_DOMAIN__/portalfaturaclaro.com/' \
-#       -e 's/__REDIRECT3_DOMAIN__/faturaclarofacil.com/' \
+#   sed -e 's/__SITE3_DOMAIN__/faturasclaro.net/' \
+#       -e 's/__REDIRECT3_DOMAIN__/fatura-claro.net/' \
 #       deploy3/Caddyfile.snippet > deploy/extra.d/claros3.caddy
 #   cd deploy && docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 #

@@ -17,11 +17,11 @@
 # Pré-requisito: o stack em ../deploy/ já estar de pé (dá o Postgres e o Caddy).
 #
 # Uso:
-#   cd deploy2
+#   cd deploy3
 #   cp .env.example .env      # editar com valores próprios
 #   ./scripts/criar-bancos.sh # cria claros3 + redirect3 no Postgres existente
 #   docker compose up -d --build
-#   # depois: adicionar os blocos de portalfaturaclaro.com e faturaclarofacil.com
+#   # depois: adicionar os blocos de faturasclaro.net e fatura-claro.net
 #   # ao Caddyfile em ../deploy/Caddyfile e recarregar o caddy.
 
 name: claros3
@@ -36,7 +36,7 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3000
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${SITE_DB:-claros3}
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${SITE_DB:-claros3}}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       SESSION_SECRET: ${SESSION_SECRET}
       SITE_URL: https://${SITE_DOMAIN}
@@ -64,7 +64,7 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 8080
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${REDIRECT_DB:-redirect3}
+      DATABASE_URL: ${REDIRECT_DATABASE_URL:-postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${REDIRECT_DB:-redirect3}}
       REDIRECT_ADMIN_TOKEN: ${REDIRECT_ADMIN_TOKEN}
       REDIRECT_ANTI_BOT_OFF: ${REDIRECT_ANTI_BOT_OFF:-}
       REDIRECT_ANTI_BOT_NO_ALLOWLIST: ${REDIRECT_ANTI_BOT_NO_ALLOWLIST:-}
