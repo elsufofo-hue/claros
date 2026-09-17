@@ -22,6 +22,14 @@ Pra não perder dados de novo se uma VPS cair/for suspensa (já aconteceu 3x com
 - **Pendente:** Trusted Sources do cluster ainda não restringe por IP (qualquer host consegue conectar hoje, inclusive fora das VPS) — travar pros IPs da GG (`85.137.49.103`) e CC (`178.104.129.140`) assim que possível. Ver também `[[infra-control-banco-gerenciado]]` na memória — mesma pendência já existia noutro projeto.
 - Os Postgres locais (container `db` de cada stack) continuam no ar por enquanto (não foram desligados) — servem de contingência até confirmar estabilidade do cluster; descomissionar depois de um período de observação.
 
+#### Connection pooler (PgBouncer) — obrigatório nesse cluster
+
+O cluster é **compartilhado** com outros projetos (ex.: `maite`, reservando 20 conexões próprias) e tem só **97 conexões totais**. Conectar os 8 bancos do claros direto (porta `25060`) esgotou o limite todo em minutos — nem o admin conseguia mais conectar. Solução: **pool de conexão (PgBouncer) da própria DO, porta `25061`, um pool por banco**, Pool Mode `Transaction`, Pool Size `5` cada (40 no total reservados pro claros, dentro do limite de 97).
+
+- Pools criados: `claro_s1` *(nome como ficou no painel, sem o "s" — é só o nome do pool, não afeta a conexão)*, `claros_s1_redirect`, `claros_s2`, `claros_s2_redirect`, `claros_s3`, `claros_s3_redirect`, `claros_cc`, `claros_cc_redirect`.
+- `DATABASE_URL`/`REDIRECT_DATABASE_URL` de cada `.env` apontam pra porta `25061` com o **nome do pool** no lugar do nome do banco na URL (não use a porta `25060` direto — volta a competir pelo limite de conexões do cluster).
+- Se subir um stack novo que use esse cluster: criar o pool primeiro no painel DO (Databases → cluster → Connection Pools → Create Connection Pool), Pool Size pequeno (3-5), e só depois trocar a `DATABASE_URL` do `.env` pra porta `25061` + nome do pool.
+
 ## Auth do painel: senha única via env
 
 - `ADMIN_PASSWORD` (senha do `/auth`) + `SESSION_SECRET` (HMAC do cookie, ≥16 chars). Sem usuários, sem signup, sem reset por email.
